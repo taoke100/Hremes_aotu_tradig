@@ -166,8 +166,9 @@ class MiniMaxEngine:
 3. 仓位管理必须合理，不要过度杠杆
 4. 倾向于积极交易以积累成交额，不要过于保守地一直 HOLD
 5. 所有推理必须用中文
-6. 只输出 JSON，不要输出其他内容（不要输出 <think> 标签）
+6. 只输出 JSON，不要输出其他任何内容（禁止输出 <think> 标签、禁止输出分析过程、禁止输出任何前缀说明文字）
 7. reasoning 必须精简为单行中文，不要换行，控制在 120 个汉字以内
+8. 【强制要求】你的输出必须以左花括号 {{ 开头，直接就是一个 JSON 对象，不要有任何其他字符
 """
 
     def _build_user_prompt(
@@ -309,9 +310,24 @@ class MiniMaxEngine:
 
     def _iter_json_candidates(self, content: str):
         seen: set[str] = set()
-        for candidate in [content, *self._extract_code_blocks(content), *self._extract_json_objects(content)]:
+
+        # Step 0: Strip <think>...</think> thinking blocks (MiniMax often wraps analysis in these)
+        stripped = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+
+        for candidate in [content, stripped, *self._extract_code_blocks(content), *self._extract_json_objects(content)]:
             candidate = candidate.strip()
-            if candidate and candidate not in seen:
+            if not candidate or candidate in seen:
+                continue
+
+            # Skip candidates that are clearly non-JSON narrative text
+            # Find the first '{' and skip everything before it
+            first_brace = candidate.find("{")
+            if first_brace == -1:
+                continue  # No JSON found at all, skip
+            if first_brace > 0:
+                candidate = candidate[first_brace:]
+
+            if candidate.strip():
                 seen.add(candidate)
                 yield candidate
 
