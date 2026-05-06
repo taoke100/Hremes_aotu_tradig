@@ -788,7 +788,7 @@
             background: rgba(4, 20, 36, 0.95);
             min-width: 148px;
             display: flex;
-            align-items: center;
+            align-items: center; /* 天然垂直居中 */
             gap: 0;
         }
 
@@ -805,12 +805,11 @@
             font-size: 0.82rem;
             font-weight: 600;
             letter-spacing: 0.06em;
-            color: var(--cyan);
+            color: var(--cyan); /* 青色 */
         }
 
         .model-dot {
             display: inline-block;
-            vertical-align: middle;
             margin: 0 5px;
             width: 8px;
             height: 8px;
@@ -825,8 +824,23 @@
         }
 
         @keyframes modelPulse {
-            0%, 100% { opacity: 1; transform: translateY(-50%) scale(1); box-shadow: 0 0 0 0 rgba(51, 215, 255, 0.6); }
-            50% { opacity: 0.7; transform: translateY(-50%) scale(0.75); box-shadow: 0 0 0 4px rgba(51, 215, 255, 0); }
+            0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 rgba(51, 215, 255, 0.6); }
+            50% { opacity: 0.7; transform: scale(0.75); box-shadow: 0 0 0 4px rgba(51, 215, 255, 0); }
+        }
+
+        /* ── 扫描节奏 Chip ── */
+        .head-chip--scan .scan-label {
+            font-size: 0.7rem;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: var(--text-mute);
+        }
+        .head-chip--scan .scan-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.82rem;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            color: #ff8c42; /* 橙色 */
         }
 
         .chart-panel {
