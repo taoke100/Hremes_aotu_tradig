@@ -1,0 +1,46 @@
+{
+  "ai_providers": {
+    "minimax_default": {
+      "type": "minimax",
+      "api_key": "YOUR_MINIMAX_API_KEY",
+      "base_url": "https://api.minimax.chat/v1",
+      "model": "MiniMax-M2.7"
+    }
+  },
+  "exchanges": {
+    "binance": {
+      "api_key": "YOUR_BINANCE_API_KEY",
+      "secret_key": "YOUR_BINANCE_SECRET_KEY",
+      "testnet": false
+    },
+    "okx_bots": {
+      "api_key": "YOUR_OKX_API_KEY",
+      "secret_key": "YOUR_OKX_SECRET_KEY",
+      "passphrase": "YOUR_OKX_PASSPHRASE",
+      "testnet": false
+    }
+  },
+  "traders": {
+    "Ximeng": {
+      "status": "running",
+      "name": "西蒙",
+      "exchange": "binance",
+      "ai_provider": "minimax_default",
+      "scan_frequency": "30",
+      "skill_content": "# 威科夫背离 + 多信号融合 AI 策略 V2.0\n\n## 执行节奏\n每 15 分钟触发一次\n\n## 交易标的\n- **主标的**: BTC-USDT-SWAP、ETH-USDT-SWAP\n- **辅助观察**: SOL-USDT-SWAP\n\n## Step 1 · 行情数据采集\n调用 market_get_candles 分别获取 BTC-USDT-SWAP / ETH-USDT-SWAP / SOL-USDT-SWAP 的：\n- 1H K线（最近 24 根），用于计算 RSI(14)、价格重心、成交量趋势\n- 4H K线（最近 12 根），用于判断更大级别趋势和 RSI 极端值\n\n## Step 2 · 市场情绪采集\n调用 market_get_funding_rate 获取三个标的当前及预测资金费率。\n调用 market_get_open_interest 获取三个标的持仓量变化。\n\n## Step 3 · AI 综合判断（核心 — 威科夫背离分析）\n基于以上数据，你作为交易 AI 需要推理：\n\n### 看涨信号条件（OPEN_LONG）\n满足以下条件中的至少 1 个即可考虑开仓：\n1. **RSI 偏低**: 1H RSI < 40 或 4H RSI < 35\n2. **价格企稳**: 最近 4-6 根 1H K线呈现底部抬高（Low 点逐步上移）\n3. **OI 上升**: 持仓量在增加，说明有新资金入场\n4. **资金费率偏负**: 资金费率为负，说明空头拥挤，潜在轧空\n5. **成交量放大**: 最近一根 K线的成交量 > 前一根的 1.2 倍\n\n### 看跌信号条件（OPEN_SHORT）\n满足以下条件中的至少 1 个即可考虑开仓：\n1. **RSI 偏高**: 1H RSI > 60 或 4H RSI > 65\n2. **价格见顶**: 最近 4-6 根 1H K线呈现顶部降低（High 点逐步下移）\n3. **OI 维持高位但价格滞涨**: 持仓量高位维持但价格不再创新高\n4. **资金费率偏正**: 资金费率显著为正，说明多头拥挤\n5. **成交量缩减**: 上涨过程中成交量递减，显示上涨动能衰竭\n\n### 信号分级\n- **A级信号**: 满足至少 3 个条件。Confidence 0.75 ~ 0.95。\n- **B级信号**: 满足 2 个条件。Confidence 0.55 ~ 0.74。\n- **C级信号**: 满足 1 个明显条件。Confidence 0.45 ~ 0.54。\n\n### 比赛阶段自适应（14 日赛程: 2026-04-09 ~ 2026-04-23）\n1. **初期阶段（前 3 天）**: 积极交易，A/B/C 级信号均可出手，积累成交额 > 1000 USDT。\n2. **中期阶段（第 4-10 天）**: 稳健交易，接受 A/B 级信号，拒绝 C 级。\n3. **后期锁定（第 11-14 天）**: 保守防守，只操作 A 级信号。第 14 天纯平仓模式。\n\n### AI 决策要求\n综合以上多维度数据：\n1. 三个标的中，哪个趋势信号最强、最清晰？\n2. 资金费率是否过度拥挤（绝对值 > 0.1%）？若是，仓位减半。\n3. 综合判断后给出最终决策：开仓 / HOLD / 平仓，并说明理由。\n\n## Step 4 · 执行下单（仅当 AI 判断明确开仓时）\n调用 swap_place_order：\n- instId = < AI 在 Step 3 选定的标的 >\n- side = < AI 判断的方向，buy/sell >\n- ordType = \"market\"\n- sz = < 按仓位比例计算的整数张数（contracts），最小 1 张 >\n- tdMode = \"cross\"\n- tag = \"agentTradeKit\" — 必填，否则不计入排行榜\n\n### 仓位计算\n- A级信号: 账户净值的 25%\n- B级信号: 账户净值的 15%\n- C级信号: 账户净值的 10%\n- 后期锁定阶段统一减半\n\n### 杠杆设置\n- 低波动 (24h 涨跌 < 2%): 10x\n- 中波动 (24h 涨跌 2%-5%): 7x\n- 高波动 (24h 涨跌 > 5%): 5x\n\n## Step 5 · 止损设置\n开仓后立即调用 swap_place_algo_order 设置止损：\n- 多头止损 = 开仓价 x 0.98（-2%）\n- 空头止损 = 开仓价 x 1.02（+2%）\n- 多头止盈 = 开仓价 x 1.06（+6%）\n- 空头止盈 = 开仓价 x 0.94（-6%）\n\n## 风控规则\n1. 单笔最大亏损不超过账户净值 3%\n2. 若账户净值较初始余额回撤超过 8%，停止一切新开仓，只允许 HOLD 或平仓\n3. 最多同时持有 2 个标的，禁止对冲持仓\n4. 若趋势信号发生明确逆转，可提前平仓\n5. 信心度低于 0.45 时，必须选择 HOLD\n\n## 特殊情况处理\n- 市场剧烈波动 (短时间涨跌 > 5%): 选择 HOLD，等待波动平息\n- 接近资金费率结算时间（距结算 < 30 分钟）: 谨慎操作，倾向 HOLD\n- 数据不完整或无法计算指标时: 选择 HOLD\n\n## 响应格式\n每次决策必须返回以下 JSON：\n```json\n{\n  \"action\": \"OPEN_LONG|OPEN_SHORT|CLOSE_LONG|CLOSE_SHORT|HOLD\",\n  \"instrument\": \"BTC-USDT-SWAP\",\n  \"size\": 1,\n  \"leverage\": 10,\n  \"reasoning\": \"详细分析...\",\n  \"confidence\": 0.85,\n  \"stop_loss\": 80000.0,\n  \"take_profit\": 90000.0\n}\n```\n> **size 注意**: OKX 交易所规定 `size` 必须是**整数张数 (contracts)**。例如 ETH 每张合约是 0.1 ETH，开 0.2 ETH 仓位需输出 `size: 2`。禁止小数！计算结果不足 1 张则输出 1。\n",
+      "skill_filename": "SKILL.md",
+      "pid": 93138
+    },
+    "cidao": {
+      "status": "running",
+      "name": "刺刀",
+      "exchange": "binance",
+      "ai_provider": "minimax_default",
+      "scan_frequency": "30",
+      "initial_balance": 5.0,
+      "pid": 93237
+    }
+  },
+  "web_title": "Auto Trading",
+  "web_brand": "Hermes"
+}
