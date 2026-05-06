@@ -1,4 +1,4 @@
-# 威科夫 RSI 稳健永续版 V1.0.30
+# 威科夫 RSI 稳健永续版 V1.0.31
 # Wyckoff RSI Survivor — Binance USDT-M Futures
 # 基于 JMWL66/openclaw-trading-bot SKILL_WYCKOFF_RSI_V2.7 改编
 

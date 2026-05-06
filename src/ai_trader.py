@@ -5,6 +5,8 @@ Runs as a subprocess per trader instance, managed by server.py.
 """
 from __future__ import annotations
 
+VERSION = "1.0.31"
+
 import argparse
 import json
 import logging
@@ -116,13 +118,19 @@ def main():
     minimax_key = os.environ.get("MINIMAX_API_KEY", "")
     minimax_model = os.environ.get("MINIMAX_MODEL", "MiniMax-M2.7")
     minimax_base_url = os.environ.get("MINIMAX_BASE_URL", "https://api.minimax.io/v1")
+    deepseek_key = os.environ.get("DEEPSEEK_API_KEY", "")
 
     if not minimax_key:
         logging.error("MINIMAX_API_KEY not set. Cannot start AI engine.")
         return
 
-    engine = MiniMaxEngine(api_key=minimax_key, model=minimax_model, base_url=minimax_base_url)
-    logging.info(f"MiniMax engine initialized: model={minimax_model}")
+    engine = MiniMaxEngine(
+        api_key=minimax_key,
+        model=minimax_model,
+        base_url=minimax_base_url,
+        deepseek_key=deepseek_key,
+    )
+    logging.info(f"MiniMax engine initialized: model={minimax_model}, deepseek={'yes' if deepseek_key else 'no'}")
 
     # State files
     status_file = session_dir / "status.json"

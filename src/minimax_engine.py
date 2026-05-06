@@ -56,10 +56,25 @@ DEFAULT_HOLD = {
 
 
 class MiniMaxEngine:
+    # 连续超时阈值，触发 DeepSeek 备用切换
+    TIMEOUT_THRESHOLD = 3
+
     def __init__(self, api_key: str, model: str = "MiniMax-M2.7",
-                 base_url: str = "https://api.minimax.io/v1"):
-        self.client = OpenAI(api_key=api_key, base_url=base_url)
-        self.model = model
+                 base_url: str = "https://api.minimax.io/v1",
+                 deepseek_key: str = "",
+                 deepseek_model: str = "deepseek-chat"):
+        self.primary = OpenAI(api_key=api_key, base_url=base_url)
+        self.primary_model = model
+        self.primary_base_url = base_url
+        # DeepSeek 备用客户端
+        if deepseek_key:
+            self.deepseek = OpenAI(api_key=deepseek_key,
+                                   base_url="https://api.deepseek.com/v1")
+        else:
+            self.deepseek = None
+        self.deepseek_model = deepseek_model
+        self._consecutive_failures = 0
+        self._using_fallback = False
 
     def analyze_market(
         self,
@@ -92,32 +107,35 @@ class MiniMaxEngine:
 
             if self._is_parse_failure(decision):
                 logger.warning("First parse failed, retrying with JSON-only prompt")
-                retry_response = self._create_completion(
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                        {"role": "assistant", "content": content},
-                        {"role": "user", "content": (
-                            "你的上一次回复不是合法 JSON。"
-                            "请重新给出最终交易决策，并且只输出一个合法 JSON 对象。"
-                            "不要输出 markdown、不要输出代码块、不要输出 <think> 标签。"
-                            "如果上一次回复只有分析过程但没有最终结论，请基于同样的市场数据完成最终决策。"
-                            "reasoning 必须是一行中文，不要换行，控制在 120 个汉字以内。"
-                        )},
-                    ],
-                    temperature=0.1,
-                    max_tokens=1200,
-                    prefer_json=True,
+                retry_content = self._retry_completion(
+                    system_prompt, user_prompt, content,
+                    temperature=0.1, max_tokens=1200,
                 )
-                retry_content = retry_response.choices[0].message.content.strip()
-                logger.info(f"MiniMax retry response: {retry_content[:300]}")
-                decision = self._parse_decision(retry_content)
+                if retry_content:
+                    logger.info(f"MiniMax retry response: {retry_content[:300]}")
+                    decision = self._parse_decision(retry_content)
 
+            self._consecutive_failures = 0  # 成功，重置计数器
+            self._using_fallback = False
             return decision
 
         except Exception as e:
-            logger.error(f"MiniMax API error: {e}")
-            return {**DEFAULT_HOLD, "reasoning": f"MiniMax API 调用失败: {str(e)}"}
+            err_str = str(e).lower()
+            is_timeout = any(x in err_str for x in [
+                "timeout", "timed out", "connect timeout",
+                "read timeout", "connection error", "ECONNRESET",
+                "connectionrefused", "name or service not known",
+            ])
+            self._consecutive_failures += 1
+            logger.error(
+                f"MiniMax API error (consecutive_failures={self._consecutive_failures}): {e}"
+            )
+
+            if is_timeout and self._consecutive_failures >= self.TIMEOUT_THRESHOLD:
+                return self._try_deepseek_fallback(
+                    skill_content, market_data, positions, account, trade_history
+                )
+            return {**DEFAULT_HOLD, "reasoning": f"MiniMax API 调用失败: {str(e)[:60]}"}
 
     def _create_completion(
         self,
@@ -128,20 +146,91 @@ class MiniMaxEngine:
         prefer_json: bool = False,
     ):
         kwargs = {
-            "model": self.model,
+            "model": self.primary_model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
         if prefer_json:
             try:
-                return self.client.chat.completions.create(
+                return self.primary.chat.completions.create(
                     **kwargs,
                     response_format={"type": "json_object"},
                 )
             except Exception:
                 pass
-        return self.client.chat.completions.create(**kwargs)
+        return self.primary.chat.completions.create(**kwargs)
+
+    def _retry_completion(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        prev_content: str,
+        temperature: float,
+        max_tokens: int,
+    ) -> str | None:
+        """重试解析失败的情况，返回 content 或 None"""
+        try:
+            resp = self._create_completion(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                    {"role": "assistant", "content": prev_content},
+                    {"role": "user", "content": (
+                        "你的上一次回复不是合法 JSON。"
+                        "请重新给出最终交易决策，并且只输出一个合法 JSON 对象。"
+                        "不要输出 markdown、不要输出代码块、不要输出 <think> 标签。"
+                        "如果上一次回复只有分析过程但没有最终结论，请基于同样的市场数据完成最终决策。"
+                        "reasoning 必须是一行中文，不要换行，控制在 120 个汉字以内。"
+                    )},
+                ],
+                temperature=temperature,
+                max_tokens=max_tokens,
+                prefer_json=True,
+            )
+            return resp.choices[0].message.content.strip()
+        except Exception as e:
+            logger.error(f"Retry completion failed: {e}")
+            return None
+
+    def _try_deepseek_fallback(
+        self,
+        skill_content: str,
+        market_data: dict[str, Any],
+        positions: list[dict],
+        account: dict[str, Any],
+        trade_history: list[dict],
+    ) -> dict[str, Any]:
+        """连续超时3次后切换 DeepSeek 备用"""
+        if not self.deepseek:
+            logger.warning("DeepSeek fallback unavailable (no API key)")
+            return {**DEFAULT_HOLD, "reasoning": "MiniMax 超时3次，DeepSeek 未配置，默认观望"}
+
+        self._using_fallback = True
+        logger.warning("=== SWITCHING TO DEEPSEEK FALLBACK (MiniMax timeout x3) ===")
+
+        system_prompt = self._build_system_prompt(skill_content)
+        user_prompt = self._build_user_prompt(market_data, positions, account, trade_history)
+
+        try:
+            kwargs = {
+                "model": self.deepseek_model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "temperature": 0.3,
+                "max_tokens": 2000,
+            }
+            resp = self.deepseek.chat.completions.create(**kwargs)
+            content = resp.choices[0].message.content.strip()
+            logger.info(f"DeepSeek fallback response: {content[:500]}")
+            decision = self._parse_decision(content)
+            self._consecutive_failures = 0  # 备用成功，重置
+            return decision
+        except Exception as e:
+            logger.error(f"DeepSeek fallback also failed: {e}")
+            return {**DEFAULT_HOLD, "reasoning": f"MiniMax 超时3次 + DeepSeek 失败: {str(e)[:40]}"}
 
     def _is_parse_failure(self, decision: dict[str, Any]) -> bool:
         reasoning = str(decision.get("reasoning", ""))

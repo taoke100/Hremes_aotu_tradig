@@ -18,6 +18,16 @@ import requests as py_requests
 from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 
+# ── 启动时加载 ~/.hermes/.env 中的 DEEPSEEK_API_KEY ──
+_hermes_env = Path.home() / ".hermes" / ".env"
+if _hermes_env.exists():
+    for line in _hermes_env.read_text().splitlines():
+        line = line.strip()
+        if "=" in line and not line.startswith("#"):
+            k, v = line.split("=", 1)
+            if k == "DEEPSEEK_API_KEY" and k not in os.environ:
+                os.environ.setdefault(k, v.strip())
+
 app = Flask(__name__, static_folder="../public", static_url_path="")
 CORS(app, resources={r"/*": {"origins": "*"}})
 
@@ -341,6 +351,9 @@ def start_trader(trader_id: str):
             env["MINIMAX_API_KEY"] = ai_cfg.get("api_key", "")
             env["MINIMAX_MODEL"] = ai_cfg.get("model", "MiniMax-M2.7")
             env["MINIMAX_BASE_URL"] = ai_cfg.get("base_url", "https://api.minimax.io/v1")
+        # DeepSeek 备用：从环境变量读取（由 hermes agent 加载 ~/.hermes/.env）
+        if os.environ.get("DEEPSEEK_API_KEY"):
+            env["DEEPSEEK_API_KEY"] = os.environ["DEEPSEEK_API_KEY"]
 
         p = subprocess.Popen(
             [python_cmd, str(script_path), "--trader_id", trader_id],
