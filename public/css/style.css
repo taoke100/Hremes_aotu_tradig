@@ -810,7 +810,7 @@
 
         .model-dot {
             display: inline-block;
-            margin: 0 5px;
+            margin: 0 3px;
             width: 8px;
             height: 8px;
             border-radius: 50%;
@@ -841,6 +841,14 @@
             font-weight: 600;
             letter-spacing: 0.06em;
             color: #ff8c42; /* 橙色 */
+        }
+
+        .chip-model-name {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.82rem;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            color: #f4fbff; /* 亮白，区分青色dot */
         }
 
         .chart-panel {
