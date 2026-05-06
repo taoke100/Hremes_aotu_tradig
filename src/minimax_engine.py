@@ -191,13 +191,19 @@ class MiniMaxEngine:
 - 买一价: {ticker.get('bidPx', 'N/A')}
 - 卖一价: {ticker.get('askPx', 'N/A')}""")
 
-            # Pre-computed RSI indicators
-            rsi_1h = data.get("rsi_1h")
-            rsi_4h = data.get("rsi_4h")
-            if rsi_1h is not None or rsi_4h is not None:
+            # Pre-computed RSI indicators (RSI6=威科夫核心, RSI14=通用)
+            rsi_1h  = data.get("rsi_1h")
+            rsi_4h  = data.get("rsi_4h")
+            rsi_6_1h = data.get("rsi_6_1h")
+            rsi_6_4h = data.get("rsi_6_4h")
+            if rsi_1h is not None or rsi_4h is not None or rsi_6_1h is not None:
                 sections.append(f"\n#### {inst_id} 技术指标 (代码预计算)")
+                if rsi_6_1h is not None:
+                    sections.append(f"- RSI(6)  1H: {rsi_6_1h}  ← 威科夫策略核心")
                 if rsi_1h is not None:
                     sections.append(f"- RSI(14) 1H: {rsi_1h}")
+                if rsi_6_4h is not None:
+                    sections.append(f"- RSI(6)  4H: {rsi_6_4h}")
                 if rsi_4h is not None:
                     sections.append(f"- RSI(14) 4H: {rsi_4h}")
 
@@ -221,20 +227,30 @@ class MiniMaxEngine:
                     if isinstance(c, list) and len(c) >= 6:
                         sections.append(f"| {c[0]} | {c[1]} | {c[2]} | {c[3]} | {c[4]} | {c[5]} |")
 
-            # Funding rate
-            fr = data.get("funding_rate")
-            if fr:
-                sections.append(f"\n#### {inst_id} 资金费率")
-                sections.append(f"- 当前费率: {fr.get('fundingRate', 'N/A')}")
-                sections.append(f"- 下次费率: {fr.get('nextFundingRate', 'N/A')}")
-                sections.append(f"- 下次结算时间: {fr.get('nextFundingTime', 'N/A')}")
+            # Funding rate (Binance 期货，从 get_funding_rate 直接返回 dict)
+            funding_rate = data.get("fundingRate")
+            next_funding_time = data.get("nextFundingTime")
+            if funding_rate is not None:
+                sections.append(f"\n#### {inst_id} 资金费率 (Binance 期货)")
+                pct = funding_rate * 100
+                sections.append(f"- 当前费率: {pct:.4f}% / 8h")
+                if next_funding_time:
+                    import datetime as dt
+                    next_ts = dt.datetime.fromtimestamp(next_funding_time / 1000, tz=dt.timezone.utc)
+                    sections.append(f"- 下次结算: {next_ts.strftime('%m-%d %H:%M')} UTC")
+                # 资金费率安全提示
+                abs_fr = abs(funding_rate)
+                if abs_fr > 0.001:
+                    sections.append(f"⚠️ 极端费率 |abs|={pct:.3f}%，建议跳过或减半仓")
+                elif abs_fr > 0.0005:
+                    sections.append(f"⚡ 注意费率偏{funding_rate>0 and '正(+)' or '负(-)'}")
 
-            # Open interest
-            oi = data.get("open_interest")
-            if oi:
+
+            # Open interest (Binance 期货持仓量)
+            open_interest = data.get("openInterest")
+            if open_interest is not None:
                 sections.append(f"\n#### {inst_id} 持仓量 (OI)")
-                sections.append(f"- 持仓量: {oi.get('oi', 'N/A')}")
-                sections.append(f"- 持仓量币数: {oi.get('oiCcy', 'N/A')}")
+                sections.append(f"- OI 名义价值: ${open_interest:,.0f} USD")
 
         # Account info
         details = account.get("details", [])
@@ -269,8 +285,9 @@ class MiniMaxEngine:
                               f"PnL: {t.get('pnl', 'N/A')} USDT")
 
         # Competition phase info
-        comp_start = date(2026, 4, 9)
-        comp_end = date(2026, 4, 23)
+        from datetime import date
+        comp_start = date(2026, 5, 6)
+        comp_end = date(2026, 5, 20)
         today = date.today()
         elapsed = (today - comp_start).days
         remaining = (comp_end - today).days
@@ -282,7 +299,7 @@ class MiniMaxEngine:
             phase = "后期锁定（保守防守，锁定利润）"
 
         sections.append(f"\n## 比赛阶段信息")
-        sections.append(f"- 比赛开始日期: 2026-04-09")
+        sections.append(f"- 比赛开始日期: 2026-05-06")
         sections.append(f"- 当前日期: {today}")
         sections.append(f"- 已过天数: {elapsed} 天")
         sections.append(f"- 剩余天数: {remaining} 天")

@@ -392,6 +392,37 @@ def compute_rsi(candles: list, period: int = 14) -> float | None:
     return round(100 - (100 / (1 + rs)), 2)
 
 
+# ──────────────── 期货数据（资金费率 & 持仓量）────────────———
+
+
+def get_funding_rate(symbol: str) -> dict | None:
+    """获取 Binance 期货资金费率. symbol 如 'BTCUSDT'."""
+    sym = _normalize(symbol)
+    data = _get("/fapi/v1/premiumIndex", {"symbol": sym}, use_futures=True)
+    if not data or "lastFundingRate" not in data:
+        return None
+    return {
+        "symbol":        data.get("symbol", sym),
+        "fundingRate":  float(data.get("lastFundingRate", 0)),   # 如 -0.00001927
+        "nextFundingTime": data.get("nextFundingTime"),          # ms 时间戳
+        "markPrice":    float(data.get("markPrice", 0)),
+        "indexPrice":   float(data.get("indexPrice", 0)),
+    }
+
+
+def get_open_interest(symbol: str) -> dict | None:
+    """获取 Binance 期货持仓量(Open Interest). symbol 如 'BTCUSDT'."""
+    sym = _normalize(symbol)
+    data = _get("/fapi/v1/openInterest", {"symbol": sym}, use_futures=True)
+    if not data or "openInterest" not in data:
+        return None
+    return {
+        "symbol":       data.get("symbol", sym),
+        "openInterest": float(data.get("openInterest", 0)),      # 名义价值(USD)
+        "time":         data.get("time"),
+    }
+
+
 # ──────────────── Helpers ────────────────
 
 def normalize_inst_id(symbol: str) -> str:
@@ -419,16 +450,25 @@ def get_market_summary(instruments: list[str]) -> dict[str, Any]:
                 "askPx": t.get("askPrice", "0"),
                 "openPrice": t.get("openPrice", "0"),
             }
-        # K 线
+        # K 线 + RSI（RSI6 用于威科夫策略，RSI14 用于通用）
         c1h = get_candles(sym, "1h", 30)
         if c1h:
             entry["candles_1h"] = c1h
-            entry["rsi_1h"] = compute_rsi(c1h, 14)
+            entry["rsi_1h"]  = compute_rsi(c1h, 14)
+            entry["rsi_6_1h"] = compute_rsi(c1h, 6)   # 威科夫策略核心指标
         c4h = get_candles(sym, "4h", 30)
         if c4h:
             entry["candles_4h"] = c4h
-            entry["rsi_4h"] = compute_rsi(c4h, 14)
-        # 资金费率（现货无此数据，留空）
-        # 持仓量（现货无此数据，留空）
+            entry["rsi_4h"]  = compute_rsi(c4h, 14)
+            entry["rsi_6_4h"] = compute_rsi(c4h, 6)
+        # 期货资金费率
+        fr = get_funding_rate(sym)
+        if fr:
+            entry["fundingRate"] = fr["fundingRate"]
+            entry["nextFundingTime"] = fr.get("nextFundingTime")
+        # 持仓量
+        oi = get_open_interest(sym)
+        if oi:
+            entry["openInterest"] = oi["openInterest"]
         result[inst] = entry
     return result
