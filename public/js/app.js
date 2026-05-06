@@ -663,6 +663,28 @@ let chart = null;
             }
         }
 
+        // ── AI 模型 Chip 更新 ──────────────────────────────
+        function getModelDisplayName(model) {
+            if (!model) return '--';
+            if (model.includes('deepseek')) return 'DeepSeek';
+            if (model.includes('MiniMax')) return 'MiniMax';
+            return model;
+        }
+
+        function updateModelChip(model) {
+            const nameEl = document.getElementById('aiModelName');
+            const dotEl = document.getElementById('modelDot');
+            if (!nameEl || !dotEl) return;
+            const display = getModelDisplayName(model);
+            nameEl.textContent = display;
+            if (display === 'DeepSeek') {
+                dotEl.className = 'model-dot model-dot--deepseek';
+            } else {
+                dotEl.className = 'model-dot';
+            }
+        }
+
+        // ── 实时思考流更新 ────────────────────────────────
         function updateThinking(thoughts) {
             const list = document.getElementById('thinkingList');
             if (!thoughts || thoughts.length === 0) {
@@ -681,6 +703,10 @@ let chart = null;
             const signature = `${sessionThoughts.length}-${sessionThoughts[sessionThoughts.length - 1]?.time || ''}`;
             if (signature === thoughtSignature) return;
             thoughtSignature = signature;
+
+            // 更新顶部模型 chip（使用最新一条记录）
+            const latestModel = sessionThoughts[sessionThoughts.length - 1]?.model;
+            updateModelChip(latestModel);
 
             const actionColors = {
                 'OPEN_LONG': '#00f7b2', 'OPEN_SHORT': '#ff5f7c',
@@ -701,6 +727,7 @@ let chart = null;
                 const confidence = item.confidence != null ? (Number(item.confidence) * 100).toFixed(0) : '';
                 const instrument = item.instrument || '';
                 const model = item.model || '';
+                const modelDisplay = getModelDisplayName(model);
 
                 let badge = '';
                 if (label) {
@@ -715,7 +742,7 @@ let chart = null;
 
                 return `
                     <div class="thinking-item ${index === 0 ? 'new' : ''}">
-                        <div class="thinking-time">${formatBeijingCompact(item.time)}${model ? ` <span style="font-size:0.6rem;color:var(--text-mute);">${model}</span>` : ''}</div>
+                        <div class="thinking-time">${formatBeijingCompact(item.time)}${model ? ` <span class="model-tag ${model.includes('deepseek') ? 'model-tag--deepseek' : ''}">${modelDisplay}</span>` : ''}</div>
                         ${badge ? `<div style="margin-bottom:3px;">${badge}</div>` : ''}
                         <div class="thinking-body">${item.thought || ''}</div>
                     </div>

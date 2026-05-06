@@ -117,6 +117,7 @@ class MiniMaxEngine:
 
             self._consecutive_failures = 0  # 成功，重置计数器
             self._using_fallback = False
+            decision["model_used"] = self.primary_model  # 记录实际使用的模型
             return decision
 
         except Exception as e:
@@ -135,7 +136,7 @@ class MiniMaxEngine:
                 return self._try_deepseek_fallback(
                     skill_content, market_data, positions, account, trade_history
                 )
-            return {**DEFAULT_HOLD, "reasoning": f"MiniMax API 调用失败: {str(e)[:60]}"}
+            return {**DEFAULT_HOLD, "reasoning": f"MiniMax API 调用失败: {str(e)[:60]}", "model_used": self.primary_model}
 
     def _create_completion(
         self,
@@ -227,10 +228,11 @@ class MiniMaxEngine:
             logger.info(f"DeepSeek fallback response: {content[:500]}")
             decision = self._parse_decision(content)
             self._consecutive_failures = 0  # 备用成功，重置
+            decision["model_used"] = self.deepseek_model  # 记录实际使用的模型
             return decision
         except Exception as e:
             logger.error(f"DeepSeek fallback also failed: {e}")
-            return {**DEFAULT_HOLD, "reasoning": f"MiniMax 超时3次 + DeepSeek 失败: {str(e)[:40]}"}
+            return {**DEFAULT_HOLD, "reasoning": f"MiniMax 超时3次 + DeepSeek 失败: {str(e)[:40]}", "model_used": self.deepseek_model}
 
     def _is_parse_failure(self, decision: dict[str, Any]) -> bool:
         reasoning = str(decision.get("reasoning", ""))

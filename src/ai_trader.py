@@ -345,6 +345,7 @@ def main():
 
     while True:
         cycle_start = time.time()
+        decision = {}  # 供异常处理时引用
 
         try:
             # Build dynamic watchlist from 24h gainers
@@ -411,7 +412,7 @@ def main():
                 "action": decision.get("action", "HOLD"),
                 "instrument": decision.get("instrument"),
                 "confidence": decision.get("confidence", 0),
-                "model": minimax_model,
+                "model": decision.get("model_used", minimax_model),
                 "leverage": decision.get("leverage"),
                 "size": decision.get("size"),
             }
@@ -470,7 +471,7 @@ def main():
                 "thought": f"交易循环异常: {str(e)}",
                 "action": "ERROR",
                 "confidence": 0,
-                "model": minimax_model,
+                "model": decision.get("model_used", minimax_model),
             })
 
         elapsed = time.time() - cycle_start
