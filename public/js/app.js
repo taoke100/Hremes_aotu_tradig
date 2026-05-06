@@ -674,25 +674,13 @@ let chart = null;
         function updateModelChip(model) {
             const nameEl = document.getElementById('aiModelName');
             const dotEl = document.getElementById('modelDot');
-            const brandNameEl = document.getElementById('brandModelName');
-            const brandDotEl = document.getElementById('brandDot');
             if (!nameEl || !dotEl) return;
             const display = getModelDisplayName(model);
             nameEl.textContent = display;
             if (display === 'DeepSeek') {
                 dotEl.className = 'model-dot model-dot--deepseek';
-                if (brandDotEl) brandDotEl.className = 'brand-dot brand-dot--deepseek';
-                if (brandNameEl) {
-                    brandNameEl.textContent = 'DeepSeek';
-                    brandNameEl.className = 'brand-name brand-name--deepseek';
-                }
             } else {
                 dotEl.className = 'model-dot';
-                if (brandDotEl) brandDotEl.className = 'brand-dot';
-                if (brandNameEl) {
-                    brandNameEl.textContent = display || 'MiniMax';
-                    brandNameEl.className = 'brand-name';
-                }
             }
         }
 

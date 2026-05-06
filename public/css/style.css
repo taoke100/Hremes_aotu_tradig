@@ -719,42 +719,28 @@
 
         .panel-head {
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             justify-content: space-between;
             gap: 12px;
             margin-bottom: 10px;
         }
 
-        .panel-brand {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex-shrink: 0;
+        .panel-meta {
+            flex: 1;
+            min-width: 0;
         }
 
-        .brand-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: var(--cyan);
-            animation: modelPulse 1.8s ease-in-out infinite;
-            flex-shrink: 0;
-        }
-
-        .brand-dot--deepseek {
-            background: #ff8c42;
-        }
-
-        .brand-name {
+        .panel-title {
             font-family: 'Orbitron', sans-serif;
-            font-size: 0.95rem;
-            font-weight: 700;
-            letter-spacing: 0.08em;
-            color: var(--cyan);
+            font-size: 1.08rem;
+            letter-spacing: 0.04em;
         }
 
-        .brand-name--deepseek {
-            color: #ff8c42;
+        .panel-desc {
+            margin-top: 4px;
+            color: var(--text-soft);
+            font-size: 0.82rem;
+            line-height: 1.35;
         }
 
         .head-chips {
@@ -762,6 +748,7 @@
             flex-direction: row;
             align-items: center;
             gap: 8px;
+            flex-shrink: 0;
         }
 
         .head-chip {
@@ -1594,6 +1581,15 @@
                 font-size: 1.54rem;
                 white-space: normal;
                 line-height: 1.15;
+            }
+
+            .head-chips {
+                gap: 5px;
+            }
+
+            .head-chip {
+                min-width: 0;
+                padding: 6px 9px;
             }
 
             .brand-title .glow {
