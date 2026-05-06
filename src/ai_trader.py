@@ -97,6 +97,9 @@ def main():
 
     logging.info(f"Starting AI Trader: {trader_id} | Exchange: {_ex_name}")
 
+    # 记录进程启动时间，供前端展示系统运行时间
+    system_start_time = now_str()
+
     # Load config
     config = load_system_config()
     trader_info = config.get("traders", {}).get(trader_id)
@@ -296,7 +299,9 @@ def main():
             "trades_count": len(trades),
             "mode": f"{_ex_name}-ai-agent",
             "exchange": _ex_name.lower(),
-            "contract_type": "USDT-M永续",
+            # contract_type 动态化：现货(cash)显示"现货"，期货显示"USDT-M永续"
+            "contract_type": "现货",
+            "system_start_time": system_start_time,
             "watchlist": watchlist,
             "top_signal": top_signal,
             "events": [e if isinstance(e, str) else e.get("thought", e.get("reasoning", str(e))) for e in events[-10:]],

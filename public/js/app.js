@@ -320,6 +320,51 @@ let chart = null;
         }
 
         function updateStatus(status) {
+            if (!status) return;
+
+            // ── 交易标的 + 合约类型动态显示 ──
+            const watchlist = Array.isArray(status.watchlist) ? status.watchlist : [];
+            const contractType = status.contract_type || '--';
+            const exchange = status.exchange || '--';
+
+            // tradingCoins 显示交易对列表（如 BTC/USDT, ETH/USDT...）
+            const coinsEl = document.getElementById('tradingCoins');
+            if (coinsEl) {
+                if (watchlist.length > 0) {
+                    // 统一格式化：BTCUSDT → BTC/USDT，BTC-USDT-SWAP → BTC/USDT（去掉合约后缀）
+                    const displaySymbols = watchlist.map(s => {
+                        s = s.replace('-SPOT', '').replace('-SWAP', '');
+                        // 处理 BTCUSDT → BTC/USDT，处理 BTC-USDT → BTC/USDT
+                        if (s.endsWith('USDT')) {
+                            s = s.slice(0, -4) + '/USDT';
+                        }
+                        return s;
+                    });
+                    coinsEl.textContent = displaySymbols.join(', ');
+                } else {
+                    coinsEl.textContent = '--';
+                }
+            }
+
+            // contractTypeNote 显示合约类型 + 交易所
+            const noteEl = document.getElementById('contractTypeNote');
+            if (noteEl) {
+                noteEl.textContent = `${exchange.toUpperCase()} ${contractType}`;
+            }
+
+            // ── 系统运行时间：解析 status.system_start_time ──
+            const startTimeStr = status.system_start_time;
+            if (startTimeStr) {
+                // 解析 "2025-05-06 20:40:00" → 毫秒时间戳
+                const parsed = new Date(startTimeStr.replace(' ', 'T'));
+                if (!isNaN(parsed.getTime())) {
+                    systemStartTimeMs = parsed.getTime();
+                    const startTimeEl = document.getElementById('systemStartTime');
+                    if (startTimeEl) {
+                        startTimeEl.textContent = '启动 ' + formatBeijingCompact(startTimeStr);
+                    }
+                }
+            }
         }
 
         function applyLiveChipState(data = {}) {
@@ -990,9 +1035,31 @@ let chart = null;
         let isEditingTrader = false;
         let scanIntervalId;
         let scanFrequency = 15000;
-        
+        let systemStartTimeMs = null; // 毫秒时间戳，来自 status.system_start_time
+
         setInterval(() => {
             document.getElementById('liveClock').textContent = new Date().toLocaleTimeString('zh-CN', {hour12:false});
+        }, 1000);
+
+        // 系统运行时间计时器：每秒更新一次
+        setInterval(() => {
+            if (!systemStartTimeMs) return;
+            const elapsed = Date.now() - systemStartTimeMs;
+            const totalSec = Math.floor(elapsed / 1000);
+            const days = Math.floor(totalSec / 86400);
+            const hours = Math.floor((totalSec % 86400) / 3600);
+            const minutes = Math.floor((totalSec % 3600) / 60);
+            const seconds = totalSec % 60;
+            let uptimeText;
+            if (days > 0) {
+                uptimeText = `${days}天 ${hours}时 ${minutes}分`;
+            } else if (hours > 0) {
+                uptimeText = `${hours}时 ${minutes}分 ${seconds}秒`;
+            } else {
+                uptimeText = `${minutes}分 ${seconds}秒`;
+            }
+            const el = document.getElementById('systemUptime');
+            if (el) el.textContent = uptimeText;
         }, 1000);
 
         function changeActiveTrader() {
