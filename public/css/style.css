@@ -828,19 +828,22 @@
             50% { opacity: 0.7; transform: scale(0.75); box-shadow: 0 0 0 4px rgba(51, 215, 255, 0); }
         }
 
-        /* ── 扫描节奏 Chip ── */
-        .head-chip--scan .scan-label {
+        /* ── AI 模型 Chip（dot 在中间） ── */
+        .head-chip--model {
+            border-color: rgba(51, 215, 255, 0.35);
+            background: rgba(4, 20, 36, 0.95);
+            min-width: 148px;
+            display: flex;
+            align-items: center;
+            gap: 0;
+        }
+
+        .chip-label {
             font-size: 0.7rem;
             letter-spacing: 0.14em;
             text-transform: uppercase;
             color: var(--text-mute);
-        }
-        .head-chip--scan .scan-value {
-            font-family: 'Orbitron', sans-serif;
-            font-size: 0.82rem;
-            font-weight: 600;
-            letter-spacing: 0.06em;
-            color: #ff8c42; /* 橙色 */
+            white-space: nowrap;
         }
 
         .chip-model-name {
@@ -851,7 +854,40 @@
             color: #f4fbff; /* 亮白，区分青色dot */
         }
 
-        /* ── AI模型 chip 浮动到右上角（现为扫描节奏浮动） ── */
+        /* ── 扫描节奏 Chip（dot 在中间） ── */
+        .head-chip--scan {
+            border: 1px solid rgba(255, 140, 66, 0.35);
+            background: rgba(4, 20, 36, 0.95);
+            min-width: 148px;
+            display: flex;
+            align-items: center;
+            gap: 0;
+        }
+        .head-chip--scan .scan-label {
+            font-size: 0.7rem;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: var(--text-mute);
+            white-space: nowrap;
+        }
+        .head-chip--scan .scan-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.82rem;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            color: #ff8c42; /* 橙色 */
+        }
+        .model-dot--scan {
+            background: #ff8c42;
+            animation: scanPulse 1.8s ease-in-out infinite;
+        }
+
+        @keyframes scanPulse {
+            0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 140, 66, 0.6); }
+            50% { opacity: 0.7; transform: scale(0.75); box-shadow: 0 0 0 4px rgba(255, 140, 66, 0); }
+        }
+
+        /* ── 扫描节奏 chip 浮动到右上角 ── */
         .thinking-panel {
             position: relative;
         }
@@ -860,12 +896,6 @@
             top: 14px;
             right: 14px;
             z-index: 2;
-            border-color: rgba(255, 140, 66, 0.35); /* 橙色边框 */
-            background: rgba(4, 20, 36, 0.95);
-            min-width: 148px;
-            display: flex;
-            align-items: center;
-            gap: 0;
         }
 
         .chart-panel {
