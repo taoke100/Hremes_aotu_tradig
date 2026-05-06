@@ -855,7 +855,7 @@
             font-size: 0.82rem;
             font-weight: 600;
             letter-spacing: 0.06em;
-            color: #f4fbff; /* 亮白，区分青色dot */
+            color: var(--cyan); /* 青色 */
         }
 
         /* ── 扫描节奏 Chip（dot 在中间） ── */
