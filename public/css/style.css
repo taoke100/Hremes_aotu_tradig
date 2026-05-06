@@ -864,6 +864,7 @@
             gap: 0;
         }
         .head-chip--scan .scan-label {
+            display: inline;
             font-size: 0.7rem;
             letter-spacing: 0.14em;
             text-transform: uppercase;
@@ -871,6 +872,7 @@
             white-space: nowrap;
         }
         .head-chip--scan .scan-value {
+            display: inline;
             font-size: 0.7rem;
             letter-spacing: 0.14em;
             text-transform: uppercase;
