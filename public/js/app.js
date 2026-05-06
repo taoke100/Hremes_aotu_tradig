@@ -677,6 +677,7 @@ let chart = null;
             if (!nameEl || !dotEl) return;
             const display = getModelDisplayName(model);
             nameEl.textContent = display || '--';
+            nameEl.style.color = display === 'DeepSeek' ? '#ff8c42' : 'var(--cyan)';
             if (display === 'DeepSeek') {
                 dotEl.className = 'model-dot model-dot--deepseek';
             } else {
