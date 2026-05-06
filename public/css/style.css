@@ -719,15 +719,14 @@
 
         .panel-head {
             display: flex;
-            align-items: flex-start;
+            align-items: center;
             justify-content: space-between;
             gap: 12px;
-            margin-bottom: 10px;
+            margin-bottom: 6px;
         }
 
         .panel-meta {
-            flex: 1;
-            min-width: 0;
+            margin-bottom: 10px;
         }
 
         .panel-title {
@@ -745,10 +744,16 @@
 
         .head-chips {
             display: flex;
-            flex-direction: row;
             align-items: center;
             gap: 8px;
-            flex-shrink: 0;
+        }
+
+        .head-chips--left {
+            justify-content: flex-start;
+        }
+
+        .head-chips--right {
+            justify-content: flex-end;
         }
 
         .head-chip {
