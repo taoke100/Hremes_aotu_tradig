@@ -5,7 +5,7 @@ Runs as a subprocess per trader instance, managed by server.py.
 """
 from __future__ import annotations
 
-VERSION = "1.0.31"
+VERSION = "1.0.32"
 
 import argparse
 import json
