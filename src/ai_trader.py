@@ -5,7 +5,7 @@ Runs as a subprocess per trader instance, managed by server.py.
 """
 from __future__ import annotations
 
-VERSION = "1.0.32"
+VERSION = "1.0.50"
 
 import argparse
 import json
@@ -210,7 +210,24 @@ def main():
                 if not result:
                     return {"type": action, "error": "Order placement failed"}
 
-                return {"type": action, "result": result}
+                # 提取 Binance 真实成交数据
+                order_id = result.get("orderId") or result.get("orderId", "无")
+                executed_qty = float(result.get("executedQty", 0))
+                # MARKET 订单：从 fills 数组计算平均成交价
+                fills = result.get("fills", [])
+                if fills:
+                    total_cost = sum(float(f["price"]) * float(f["qty"]) for f in fills)
+                    total_qty = sum(float(f["qty"]) for f in fills)
+                    avg_price = total_cost / total_qty if total_qty > 0 else 0.0
+                else:
+                    avg_price = float(result.get("price", 0) or 0)
+
+                return {
+                    "type": action,
+                    "orderId": order_id,
+                    "executedQty": executed_qty,
+                    "price": avg_price,
+                }
 
             elif action in ("CLOSE_LONG", "CLOSE_SHORT"):
                 # 现货平仓：平多仓=卖出，平空仓=买入
@@ -225,7 +242,24 @@ def main():
                 )
                 if not result:
                     return {"type": action, "error": "Close order failed"}
-                return {"type": action, "result": result}
+
+                # 提取 Binance 真实成交数据
+                order_id = result.get("orderId") or result.get("orderId", "无")
+                executed_qty = float(result.get("executedQty", 0))
+                fills = result.get("fills", [])
+                if fills:
+                    total_cost = sum(float(f["price"]) * float(f["qty"]) for f in fills)
+                    total_qty = sum(float(f["qty"]) for f in fills)
+                    avg_price = total_cost / total_qty if total_qty > 0 else 0.0
+                else:
+                    avg_price = float(result.get("price", 0) or 0)
+
+                return {
+                    "type": action,
+                    "orderId": order_id,
+                    "executedQty": executed_qty,
+                    "price": avg_price,
+                }
 
         except Exception as e:
             logging.error(f"Trade execution error: {e}")
@@ -431,20 +465,16 @@ def main():
                         "type": "BUY" if "LONG" in decision["action"] else "SELL",
                         "action": decision["action"],
                         "symbol": decision.get("instrument", ""),
-                        "amount": decision.get("size", 0),
-                        "price": 0,
+                        "amount": exec_result.get("executedQty") or decision.get("size", 0),
+                        "price": exec_result.get("price") or 0,
                         "leverage": decision.get("leverage", 10),
                         "direction": "long" if "LONG" in decision["action"] else "short",
                         "tradeAction": "OPEN" if "OPEN" in decision["action"] else "CLOSE",
                         "reason": decision.get("reasoning", "")[:200],
                         "confidence": decision.get("confidence", 0),
                         "pnl": exec_result.get("realized_pnl", 0),
+                        "orderId": exec_result.get("orderId", "无"),
                     }
-
-                    inst = decision.get("instrument", "")
-                    if inst in market_data:
-                        ticker = market_data[inst].get("ticker", {})
-                        trade_record["price"] = float(ticker.get("last", 0))
 
                     if exec_result.get("error"):
                         trade_record["error"] = exec_result["error"]
