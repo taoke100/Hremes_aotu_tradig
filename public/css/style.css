@@ -839,6 +839,8 @@
         }
 
         .chip-label {
+            display: inline;
+            vertical-align: middle;
             font-size: 0.7rem;
             letter-spacing: 0.14em;
             text-transform: uppercase;
@@ -847,6 +849,8 @@
         }
 
         .chip-model-name {
+            display: inline;
+            vertical-align: middle;
             font-family: 'Orbitron', sans-serif;
             font-size: 0.82rem;
             font-weight: 600;
@@ -865,6 +869,7 @@
         }
         .head-chip--scan .scan-label {
             display: inline;
+            vertical-align: middle;
             font-size: 0.7rem;
             letter-spacing: 0.14em;
             text-transform: uppercase;
@@ -873,6 +878,7 @@
         }
         .head-chip--scan .scan-value {
             display: inline;
+            vertical-align: middle;
             font-size: 0.7rem;
             letter-spacing: 0.14em;
             text-transform: uppercase;
