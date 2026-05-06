@@ -851,6 +851,23 @@
             color: #f4fbff; /* 亮白，区分青色dot */
         }
 
+        /* ── AI模型 chip 浮动到右上角 ── */
+        .thinking-panel {
+            position: relative;
+        }
+        .head-chip--float {
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            z-index: 2;
+            border-color: rgba(51, 215, 255, 0.35);
+            background: rgba(4, 20, 36, 0.95);
+            min-width: 148px;
+            display: flex;
+            align-items: center;
+            gap: 0;
+        }
+
         .chart-panel {
             overflow: hidden;
             min-height: 0;
