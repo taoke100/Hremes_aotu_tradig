@@ -782,12 +782,22 @@
             font-size: 1.18rem;
         }
 
-        /* ── AI 模型 Chip（一行显示） ── */
+        /* ── AI 模型 Chip（dot 在中间） ── */
         .head-chip--model {
             border-color: rgba(51, 215, 255, 0.35);
             background: rgba(4, 20, 36, 0.95);
             min-width: 148px;
-            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 0;
+        }
+
+        .chip-label {
+            font-size: 0.7rem;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: var(--text-mute);
+            white-space: nowrap;
         }
 
         .chip-model-name {
@@ -801,12 +811,13 @@
         .model-dot {
             display: inline-block;
             vertical-align: middle;
-            margin-left: 6px;
+            margin: 0 5px;
             width: 8px;
             height: 8px;
             border-radius: 50%;
             background: var(--cyan);
             animation: modelPulse 1.8s ease-in-out infinite;
+            flex-shrink: 0;
         }
 
         .model-dot--deepseek {

@@ -676,7 +676,7 @@ let chart = null;
             const dotEl = document.getElementById('modelDot');
             if (!nameEl || !dotEl) return;
             const display = getModelDisplayName(model);
-            nameEl.textContent = 'AI 模型 ' + (display || '--');
+            nameEl.textContent = display || '--';
             if (display === 'DeepSeek') {
                 dotEl.className = 'model-dot model-dot--deepseek';
             } else {
