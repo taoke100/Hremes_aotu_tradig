@@ -782,7 +782,7 @@
             font-size: 1.18rem;
         }
 
-        /* ── AI 模型 Chip ── */
+        /* ── AI 模型 Chip（一行显示） ── */
         .head-chip--model {
             border-color: rgba(51, 215, 255, 0.35);
             background: rgba(4, 20, 36, 0.95);
@@ -790,16 +790,18 @@
             position: relative;
         }
 
-        .head-chip--model strong {
-            font-size: 0.9rem;
-            letter-spacing: 0.05em;
+        .chip-model-name {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.82rem;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            color: var(--cyan);
         }
 
         .model-dot {
-            position: absolute;
-            right: 10px;
-            top: 50%;
-            transform: translateY(-50%);
+            display: inline-block;
+            vertical-align: middle;
+            margin-left: 6px;
             width: 8px;
             height: 8px;
             border-radius: 50%;
