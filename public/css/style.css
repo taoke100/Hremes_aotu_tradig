@@ -851,7 +851,7 @@
             color: #f4fbff; /* 亮白，区分青色dot */
         }
 
-        /* ── AI模型 chip 浮动到右上角 ── */
+        /* ── AI模型 chip 浮动到右上角（现为扫描节奏浮动） ── */
         .thinking-panel {
             position: relative;
         }
@@ -860,7 +860,7 @@
             top: 14px;
             right: 14px;
             z-index: 2;
-            border-color: rgba(51, 215, 255, 0.35);
+            border-color: rgba(255, 140, 66, 0.35); /* 橙色边框 */
             background: rgba(4, 20, 36, 0.95);
             min-width: 148px;
             display: flex;
