@@ -5,7 +5,7 @@ Runs as a subprocess per trader instance, managed by server.py.
 """
 from __future__ import annotations
 
-VERSION = "1.0.50"
+VERSION = "1.0.51"
 
 import argparse
 import json
@@ -170,14 +170,13 @@ def main():
             pass
 
     def fetch_account() -> dict:
-        bal = get_balance("USDT")
+        bal = get_balance("USDT", use_futures=True)
         if bal:
             return bal
         return {"totalEq": "0", "availBal": "0"}
 
     def fetch_positions() -> list:
-        # 现货无持仓概念，直接返回空
-        return []
+        return get_positions("SWAP")
 
     def fetch_market_data(instruments: list | None = None) -> dict:
         return get_market_summary(instruments or watchlist)

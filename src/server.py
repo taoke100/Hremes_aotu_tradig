@@ -516,19 +516,23 @@ def get_account_balance():
         import binance_client as bc
         os.environ["BINANCE_API_KEY"] = os.environ.get("BINANCE_API_KEY", exchange_cfg.get("api_key", ""))
         os.environ["BINANCE_SECRET_KEY"] = os.environ.get("BINANCE_SECRET_KEY", exchange_cfg.get("secret_key", ""))
-        result = bc.get_balance("USDT")
+        # 判断是否走合约 API
+        use_futures = exchange_cfg.get("futures", True)
+        result = bc.get_balance("USDT", use_futures=use_futures)
         if result:
-            total = float(result.get("totalEq", 0))
-            avail = float(result.get("availBal", 0))
-            locked = float(result.get("locked", 0))
+            wallet = float(result.get("walletBalance", 0))
+            unreal   = float(result.get("crossUnPnl", 0))
             return jsonify({
-                "exchange": "binance",
-                "currency": "USDT",
-                "total": total,
-                "available": avail,
-                "locked": locked,
+                "exchange":      "binance",
+                "accountType":   "futures" if use_futures else "spot",
+                "currency":      "USDT",
+                "total":         wallet + unreal,   # 净值 = 钱包 + 未实现盈亏
+                "available":     float(result.get("availBal", 0)),
+                "walletBalance": wallet,
+                "unrealizedPnl": unreal,
+                "locked":        float(result.get("locked", 0)),
             }), 200
-        return jsonify({"exchange": "binance", "currency": "USDT", "total": 0, "available": 0, "locked": 0}), 200
+        return jsonify({"exchange": "binance", "currency": "USDT", "total": 0, "available": 0, "walletBalance": 0, "unrealizedPnl": 0, "locked": 0}), 200
 
     return jsonify({"exchange": exchange_id, "currency": "USDT", "total": 0, "available": 0, "locked": 0}), 200
 

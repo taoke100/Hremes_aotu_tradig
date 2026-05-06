@@ -73,10 +73,10 @@ def _post(path: str, params: dict, auth: bool = True, use_futures: bool = False)
         p["signature"] = _sign(p)
         url += "?" + urlencode(sorted(p.items()))
         try:
-            r = requests.post(url, headers=_headers(), timeout=10)
+            r = requests.get(url, headers=_headers(), timeout=10)
             return r.json()
         except Exception as e:
-            logger.error(f"POST {url} error: {e}")
+            logger.error(f"GET {url} error: {e}")
             return None
     try:
         r = requests.post(url, headers=_headers(), json=params, timeout=10)
@@ -197,8 +197,22 @@ def get_top_gainers(
 
 # ──────────────── Account / Positions (signed) ────────────────
 
-def get_balance(ccy: str = "USDT") -> dict | None:
-    """获取账户余额. 现货用 /api/v3/account, 期货用 /fapi/v2/balance."""
+def get_balance(ccy: str = "USDT", use_futures: bool = False) -> dict | None:
+    """获取账户余额. use_futures=True 强制查合约，否则查现货."""
+    if use_futures:
+        data = _post("/fapi/v2/balance", {}, auth=True, use_futures=True)
+        if isinstance(data, list):
+            for b in data:
+                if b.get("asset") == ccy:
+                    return {
+                        "totalEq":     b.get("marginBalance", "0"),
+                        "availBal":    b.get("availableBalance", "0"),
+                        "walletBalance": b.get("balance", "0"),
+                        "crossUnPnl":  b.get("crossUnPnl", "0"),
+                        "details": [b],
+                    }
+        return None
+
     # 现货账户
     data = _get("/api/v3/account", {}, auth=True, use_futures=False)
     if isinstance(data, dict) and "balances" in data:
@@ -211,19 +225,6 @@ def get_balance(ccy: str = "USDT") -> dict | None:
                     "details": [b],
                 }
         return None
-    # 期货账户（备用）
-    try:
-        data = _post("/fapi/v2/balance", {}, auth=True, use_futures=True)
-        if isinstance(data, list):
-            for b in data:
-                if b.get("asset") == ccy:
-                    return {
-                        "totalEq": b.get("marginBalance", "0"),
-                        "availBal": b.get("availableBalance", "0"),
-                        "details": [b],
-                    }
-    except Exception:
-        pass
     return None
 
 

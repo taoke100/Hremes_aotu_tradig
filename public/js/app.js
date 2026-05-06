@@ -1037,8 +1037,30 @@ let chart = null;
 
                 // 更新实时余额区域
                 if (balanceData && !balanceData.error) {
-                    const bal = parseFloat(balanceData.available || 0).toFixed(2);
-                    updateMetric('currentBalance', `${bal} USDT`, 'neutral');
+                    const total   = parseFloat(balanceData.total || 0).toFixed(4);
+                    const wallet  = parseFloat(balanceData.walletBalance || 0).toFixed(4);
+                    const unreal  = parseFloat(balanceData.unrealizedPnl || 0);
+                    const accountType = balanceData.accountType || 'spot';
+
+                    updateMetric('currentBalance', `${total} USDT`, unreal >= 0 ? 'positive' : 'negative');
+
+                    // 合约信息
+                    const contractInfo = document.getElementById('contractInfo');
+                    const contractWallet = document.getElementById('contractWallet');
+                    const contractUnreal = document.getElementById('contractUnreal');
+                    const accountNote   = document.getElementById('accountNote');
+
+                    if (accountType === 'futures') {
+                        contractInfo.style.display = 'block';
+                        accountNote.textContent = 'U本位永续合约';
+                        contractWallet.textContent = `钱包余额 ${wallet} USDT`;
+                        contractUnreal.textContent  = `未实现盈亏 ${unreal >= 0 ? '+' : ''}${unreal.toFixed(4)} USDT`;
+                    } else {
+                        contractInfo.style.display = 'block';
+                        accountNote.textContent = '现货账户';
+                        contractWallet.textContent = `可用 ${balanceData.available} USDT`;
+                        contractUnreal.textContent = '';
+                    }
                 }
 
                 ['BTC', 'ETH', 'SOL', 'DOGE'].forEach((label) => {
