@@ -311,6 +311,13 @@ def main():
                 "entryLogic": "MiniMax AI 分析决策",
                 "riskGuard": "SKILL.md 风控规则",
             },
+            # 当前策略参数（供前端展示）
+            "strategy_params": {
+                "take_profit": "+30%卖50% / +50%卖80%",
+                "stop_loss": "买入价-5%止损",
+                "leverage": "现货（无杠杆）",
+                "entry_logic": "RSI+价格形态+成交量+趋势四维信号",
+            },
         }
 
         status_file.write_text(json.dumps(status_payload, ensure_ascii=False, indent=2))

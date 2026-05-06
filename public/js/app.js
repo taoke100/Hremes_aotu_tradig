@@ -352,6 +352,17 @@ let chart = null;
                 noteEl.textContent = `${exchange.toUpperCase()} ${contractType}`;
             }
 
+            // ── 策略参数展示（止盈 / 止损 / 杠杆 / 开仓逻辑）──
+            const params = status.strategy_params || {};
+            const fill = (id, val) => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = val || '--';
+            };
+            fill('paramTakeProfit', params.take_profit || '--');
+            fill('paramStopLoss',  params.stop_loss  || '--');
+            fill('paramLeverage',  params.leverage    || '--');
+            fill('paramEntryLogic', params.entry_logic || '--');
+
             // ── 系统运行时间：解析 status.system_start_time ──
             const startTimeStr = status.system_start_time;
             if (startTimeStr) {
