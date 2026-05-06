@@ -834,14 +834,18 @@ let chart = null;
                 const pnlText = (isCurrentOpenTrade || (Number.isFinite(pnl) && pnl !== 0)) ? formatSigned(pnl) : '--';
                 const tradeText = isBuy ? '买入' : '卖出';
                 const directionText = direction === 'long' ? '做多' : '做空';
+                const amount = Number(trade.amount);
+                const amountText = Number.isFinite(amount) && amount > 0 ? `${amount} 张` : '--';
+                const priceText = Number(trade.price) > 0 ? Number(trade.price).toFixed(2) : '市价';
 
                 return `
                     <tr>
                         <td>${formatBeijingCompact(trade.time)}</td>
                         <td class="${isBuy ? 'action-buy' : 'action-sell'}">${tradeText}</td>
                         <td><span class="dir-badge ${direction}">${directionText}</span></td>
-                        <td>${(trade.symbol || '--').replace('USDT', '')}</td>
-                        <td>${Number(trade.price).toFixed(2)}</td>
+                        <td>${(trade.symbol || '--').replace('USDT', '').replace('-SWAP', '')}</td>
+                        <td>${amountText}</td>
+                        <td>${priceText}</td>
                         <td>${trade.leverage ? `${trade.leverage}x` : '--'}</td>
                         <td class="${pnlClass}">${pnlText}</td>
                     </tr>
