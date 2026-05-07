@@ -155,7 +155,7 @@
             letter-spacing: 0.06em;
         }
 
-        .rb-since {
+        .rb-label {
             color: var(--text-mute);
             font-size: 0.65rem;
         }

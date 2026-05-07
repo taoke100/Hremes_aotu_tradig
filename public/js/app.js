@@ -373,7 +373,7 @@
                     systemStartTimeMs = parsed.getTime();
                     const startTimeEl = document.getElementById('systemStartTime');
                     if (startTimeEl) {
-                        startTimeEl.textContent = '启动 ' + formatBeijingCompact(startTimeStr);
+                        startTimeEl.textContent = '运行时间 ' + formatBeijingCompact(startTimeStr);
                     }
                 }
             }
