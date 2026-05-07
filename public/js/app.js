@@ -9,7 +9,7 @@
         let latestMarketState = null;
         let latestSession = null;
         const LOCAL_API_BASE = window.location.protocol === 'file:'
-            ? 'http://127.0.0.1:5000'
+            ? 'http://127.0.0.1:8889'
             : window.location.origin;
         const SOURCE_UTC_OFFSET_HOURS = 9;
         const DISPLAY_TIMEZONE = 'Asia/Tokyo';
