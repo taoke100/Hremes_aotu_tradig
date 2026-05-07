@@ -1,0 +1,27 @@
+{
+  "name": "binance-trading-bot-ts",
+  "version": "1.2.0",
+  "description": "AI Trading Bot — Binance + OKX with MiniMax AI Engine (TypeScript)",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node --import tsx src/server.ts",
+    "test": "echo \"No tests yet\""
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.1",
+    "@types/cors": "^2.8.17",
+    "@types/node": "^22.13.10",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

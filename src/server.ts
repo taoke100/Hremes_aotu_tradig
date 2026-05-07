@@ -1,0 +1,346 @@
+/**
+ * Server — Express API + Static File Server (TypeScript)
+ * Manages trader subprocesses, exposes REST API for the frontend.
+ */
+import express, { Request, Response, NextFunction } from "express";
+import cors from "cors";
+import { readFileSync, existsSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { spawn, ChildProcess } from "node:child_process";
+import type { TraderStatus, HealthStatus, TraderInfo } from "./types.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const BASE_DIR = join(__dirname, "..");
+const PUBLIC_DIR = join(BASE_DIR, "public");
+const DATA_DIR = join(BASE_DIR, "data");
+const SESSIONS_DIR = join(DATA_DIR, "sessions");
+const SYSTEM_CONFIG_FILE = join(DATA_DIR, "system_config.json");
+const SERVER_PORT = parseInt(process.env.PORT ?? "8888");
+
+const TRADERS: Record<string, ChildProcess> = {};
+const SERVER_START = Date.now();
+
+// Load env
+try {
+  const envPath = join(process.env.HOME ?? "", ".hermes", ".env");
+  if (existsSync(envPath)) {
+    for (const line of readFileSync(envPath, "utf-8").split("\n")) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith("#")) {
+        const eqIdx = trimmed.indexOf("=");
+        if (eqIdx > 0) {
+          const key = trimmed.slice(0, eqIdx);
+          const val = trimmed.slice(eqIdx + 1);
+          if (!(key in process.env)) process.env[key] = val;
+        }
+      }
+    }
+    console.log("[Server] Loaded .env credentials");
+  }
+} catch {
+  console.warn("[Server] .env not found, using existing env vars");
+}
+
+// ── Express Setup ────────────────────────────────────────────
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// Serve public static files
+app.use(express.static(PUBLIC_DIR));
+
+// ── Config Helpers ───────────────────────────────────────────
+
+interface TraderConfig { name: string; exchange: string; watchlist: string[]; scan_frequency: number; skill_content?: string; initial_balance?: number }
+interface SystemConfig { traders: Record<string, TraderConfig> }
+
+function loadSystemConfig(): SystemConfig {
+  if (existsSync(SYSTEM_CONFIG_FILE)) {
+    return JSON.parse(readFileSync(SYSTEM_CONFIG_FILE, "utf-8"));
+  }
+  return { traders: {} };
+}
+
+function saveSystemConfig(cfg: SystemConfig): void {
+  // Ensure directories exist
+  if (!existsSync(DATA_DIR)) import("node:fs").then(({ mkdirSync }) => mkdirSync(DATA_DIR, { recursive: true }));
+  import("node:fs").then(({ writeFileSync }) => writeFileSync(SYSTEM_CONFIG_FILE, JSON.stringify(cfg, null, 2), "utf-8"));
+}
+
+// ── Trader Process Management ────────────────────────────────
+
+function getTraderEnv() {
+  const env = { ...process.env };
+  // Filter to only necessary keys to avoid leaking
+  const needed = [
+    "BINANCE_API_KEY", "BINANCE_SECRET_KEY",
+    "MINIMAX_API_KEY", "MINIMAX_MODEL", "MINIMAX_BASE_URL",
+    "DEEPSEEK_API_KEY", "EXCHANGE_TYPE",
+  ];
+  return Object.fromEntries(Object.entries(env).filter(([k]) => needed.includes(k)));
+}
+
+function startTraderProcess(traderId: string): { pid: number } {
+  const existing = TRADERS[traderId];
+  if (existing && !existing.killed) {
+    return { pid: existing.pid ?? 0 };
+  }
+
+  const nodePath = process.env.HOME + "/.nvm/versions/node/v24.14.0/bin/node";
+  const bunPath = process.env.HOME + "/.bun/bin/bun";
+
+  // Try bun first, then node + tsx
+  const useBun = existsSync(bunPath);
+  const useNvm = existsSync(nodePath);
+
+  const execPath = useBun ? bunPath : useNvm ? nodePath : process.execPath;
+  const scriptArgs = useBun
+    ? [join(__dirname, "trader.ts"), traderId]
+    : ["--import", "tsx", join(__dirname, "trader.ts"), traderId];
+
+  const child = spawn(execPath, scriptArgs, {
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...getTraderEnv(), EXCHANGE_TYPE: "binance" },
+    detached: false,
+  });
+
+  child.stdout?.on("data", (d: Buffer) => {
+    const line = d.toString().trim();
+    if (line) console.log(`[${traderId}] ${line}`);
+  });
+
+  child.stderr?.on("data", (d: Buffer) => {
+    const line = d.toString().trim();
+    if (line) console.error(`[${traderId} ERR] ${line}`);
+  });
+
+  child.on("exit", (code) => {
+    console.warn(`[${traderId}] Process exited with code ${code}`);
+    delete TRADERS[traderId];
+  });
+
+  TRADERS[traderId] = child;
+  console.log(`[Server] Started ${traderId} (PID ${child.pid})`);
+  return { pid: child.pid ?? 0 };
+}
+
+function stopTraderProcess(traderId: string): { status: string } {
+  const child = TRADERS[traderId];
+  if (child && !child.killed) {
+    child.kill("SIGTERM");
+    delete TRADERS[traderId];
+    console.log(`[Server] Stopped ${traderId}`);
+  }
+  return { status: "stopped" };
+}
+
+function getTraderInfo(traderId: string): TraderInfo {
+  const child = TRADERS[traderId];
+  return {
+    pid: child?.pid ?? 0,
+    status: child && !child.killed ? "running" : "stopped",
+  };
+}
+
+// ── API Routes ──────────────────────────────────────────────
+
+// Health
+app.get("/api/health", (_req: Request, res: Response) => {
+  const traders: Record<string, TraderInfo> = {};
+  const cfg = loadSystemConfig();
+  for (const id of Object.keys(cfg.traders as object)) {
+    traders[id] = getTraderInfo(id);
+  }
+  const health: HealthStatus = {
+    server: "ok",
+    traders,
+    uptime: Math.floor((Date.now() - SERVER_START) / 1000),
+  };
+  res.json(health);
+});
+
+// Trader list
+app.get("/api/traders", (_req: Request, res: Response) => {
+  const cfg = loadSystemConfig();
+  const result: Record<string, TraderInfo> = {};
+  for (const id of Object.keys(cfg.traders as object)) {
+    result[id] = getTraderInfo(id);
+  }
+  res.json(result);
+});
+
+// Start trader
+app.post("/api/traders/:trader_id/start", (req: Request, res: Response) => {
+  const trader_id = String(req.params.trader_id);
+  const cfg = loadSystemConfig();
+  if (!cfg.traders[trader_id]) {
+    res.status(404).json({ error: `Trader ${trader_id} not found in config` });
+    return;
+  }
+  const { pid } = startTraderProcess(String(trader_id));
+  res.json({ pid, status: "started" });
+});
+
+// Stop trader
+app.post("/api/traders/:trader_id/stop", (req: Request, res: Response) => {
+  const trader_id = String(req.params.trader_id);
+  res.json(stopTraderProcess(trader_id));
+});
+
+// Delete trader
+app.delete("/api/traders/:trader_id", (req: Request, res: Response) => {
+  const trader_id = String(req.params.trader_id);
+  stopTraderProcess(trader_id);
+  res.json({ status: "deleted" });
+});
+
+// Get trader skill
+app.get("/api/traders/:trader_id/skill", (req: Request, res: Response) => {
+  const trader_id = String(req.params.trader_id);
+  const cfg = loadSystemConfig();
+  const t = cfg.traders[trader_id];
+  if (!t) { res.status(404).json({ error: "not found" }); return; }
+  res.json({ skill_content: t.skill_content ?? "" });
+});
+
+// Update trader skill
+app.post("/api/traders/:trader_id/skill", (req: Request, res: Response) => {
+  const trader_id = String(req.params.trader_id);
+  const { skill_content } = req.body as { skill_content?: string };
+  const cfg = loadSystemConfig();
+  if (!cfg.traders[trader_id as string]) { res.status(404).json({ error: "not found" }); return; }
+  (cfg.traders[trader_id as string] ?? {}).skill_content = skill_content ?? "";
+  saveSystemConfig(cfg);
+  res.json({ status: "ok" });
+});
+
+// System config
+app.get("/api/system/config", (_req: Request, res: Response) => {
+  res.json(loadSystemConfig());
+});
+
+app.post("/api/system/config", (req: Request, res: Response) => {
+  const cfg = req.body as SystemConfig;
+  if (!cfg || !cfg.traders) {
+    res.status(400).json({ error: "Invalid config" });
+    return;
+  }
+  saveSystemConfig(cfg);
+  res.json({ status: "ok" });
+});
+
+// Balance proxy (reads from status.json)
+app.get("/api/balance", (_req: Request, res: Response) => {
+  const cfg = loadSystemConfig();
+  const balances: Record<string, Record<string, number>> = {};
+  for (const traderId of Object.keys(cfg.traders)) {
+    const statusPath = join(SESSIONS_DIR, traderId, "status.json");
+    if (existsSync(statusPath)) {
+      try {
+        const s = JSON.parse(readFileSync(statusPath, "utf-8")) as TraderStatus;
+        balances[traderId] = {
+          equity: s.equity,
+          balance: s.balance,
+          total_profit: s.total_profit,
+          yield_rate: s.yield_rate,
+          unrealized_pnl: s.unrealized_pnl,
+          available: s.available,
+          positions: s.positions,
+        };
+      } catch { /* skip */ }
+    }
+  }
+  res.json(balances);
+});
+
+// Market data proxy
+app.get("/api/market", async (req: Request, res: Response) => {
+  const symRaw = req.query.symbols;
+  const symbols = (typeof symRaw === "string" ? symRaw : Array.isArray(symRaw) ? (symRaw[0] as string) : "BTCUSDT").split(",").map((s: string) => s.trim());
+  try {
+    const { getMarketSummary } = await import("./binance.js");
+    const data = await getMarketSummary(symbols);
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// Session data files
+app.get("/data/:trader_id/:filename", (req: Request, res: Response) => {
+  const trader_id = String(req.params.trader_id);
+  const filename = String(req.params.filename);
+  if (!["status.json", "thinking.json", "trades.json"].includes(filename)) {
+    res.status(403).json({ error: "forbidden" });
+    return;
+  }
+  const filePath = join(SESSIONS_DIR, String(trader_id), filename);
+  if (!existsSync(filePath)) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  res.json(JSON.parse(readFileSync(filePath, "utf-8")));
+});
+
+// AI test endpoint
+app.post("/api/ai/test", async (req: Request, res: Response) => {
+  const { marketData, positions, account, skillContent } = req.body;
+  try {
+    const { AIEngine } = await import("./ai_engine.js");
+    const engine = new AIEngine();
+    const decision = await engine.analyzeMarket({
+      skillContent: skillContent ?? "默认策略",
+      marketData: marketData ?? {},
+      positions: positions ?? [],
+      account: account ?? { totalEq: "1000" },
+      tradeHistory: [],
+      fallbackSymbol: "BTCUSDT",
+    });
+    res.json(decision);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// News endpoint (stub)
+app.get("/api/news", (_req: Request, res: Response) => {
+  res.json([]);
+});
+
+// Catch-all → serve index.html
+app.get("*", (_req: Request, res: Response) => {
+  const indexPath = join(PUBLIC_DIR, "index.html");
+  if (existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(200).send(`<html><body><h1>Binance Trading Bot TS</h1><p>v1.2.0 running on port ${SERVER_PORT}</p></body></html>`);
+  }
+});
+
+// ── Error Handler ───────────────────────────────────────────
+
+app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  console.error(`[Server] Unhandled: ${err.message}`);
+  res.status(500).json({ error: err.message });
+});
+
+// ── Graceful Shutdown ────────────────────────────────────────
+
+process.on("SIGTERM", () => {
+  console.log("[Server] SIGTERM — shutting down traders...");
+  for (const [id] of Object.entries(TRADERS)) {
+    stopTraderProcess(id);
+  }
+  process.exit(0);
+});
+
+// ── Start ───────────────────────────────────────────────────
+
+app.listen(SERVER_PORT, "0.0.0.0", () => {
+  console.log(`[Server] Binance Trading Bot TS v1.2.0`);
+  console.log(`[Server] Listening on http://0.0.0.0:${SERVER_PORT}`);
+  console.log(`[Server] Data dir: ${DATA_DIR}`);
+  console.log(`[Server] Sessions dir: ${SESSIONS_DIR}`);
+});
