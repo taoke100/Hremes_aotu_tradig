@@ -1047,6 +1047,43 @@
             min-height: 0;
         }
 
+        .strategy-top {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .trader-mode-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: rgba(7, 16, 31, 0.6);
+            border: 1px solid rgba(108, 183, 255, 0.22);
+            font-size: 0.68rem;
+            color: var(--text-soft);
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 500;
+            letter-spacing: 0.04em;
+        }
+
+        .trader-mode-chip.spot {
+            border-color: rgba(255, 183, 51, 0.35);
+            color: var(--warning);
+        }
+
+        .trader-mode-chip.futures {
+            border-color: rgba(0, 247, 178, 0.3);
+            color: var(--positive);
+        }
+
+        .tmc-sep {
+            color: var(--text-mute);
+            font-size: 0.65rem;
+        }
+
         .strategy-kicker {
             color: var(--text-mute);
             font-size: 0.72rem;

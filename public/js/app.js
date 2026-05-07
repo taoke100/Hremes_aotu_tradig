@@ -318,6 +318,22 @@
         function updateStrategy(status) {
             const skillName = status?.strategy_v2?.skill || status?.strategy_v2?.name || '--';
             document.getElementById('strategySummary').textContent = skillName;
+
+            // ── 交易员 + 交易类型 chip ──
+            const traderName = status?.strategy_v2?.name || '--';
+            const contractType = status?.contract_type || '';
+            const isSpot = /spot|现货/i.test(contractType);
+            const isFutures = /永续|futures|合约|contract/i.test(contractType);
+            const modeLabel = isSpot ? '现货交易' : (isFutures ? '合约交易' : '自动交易');
+
+            const chip = document.getElementById('traderModeChip');
+            const nameEl = document.getElementById('traderModeName');
+            const typeEl = document.getElementById('traderModeType');
+            if (nameEl) nameEl.textContent = traderName;
+            if (typeEl) typeEl.textContent = modeLabel;
+            if (chip) {
+                chip.className = 'trader-mode-chip' + (isSpot ? ' spot' : (isFutures ? ' futures' : ''));
+            }
         }
 
         function updateStatus(status) {
