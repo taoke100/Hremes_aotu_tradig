@@ -300,6 +300,125 @@
             flex-shrink: 0;
         }
 
+        /* ── 双交易员并行卡片 ── */
+        .trader-card-stack {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .trader-card {
+            position: relative;
+            display: inline-flex;
+            flex-direction: column;
+            gap: 1px;
+            padding: 6px 12px;
+            border-radius: 14px;
+            background: rgba(7, 16, 31, 0.55);
+            border: 1px solid rgba(108, 183, 255, 0.18);
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+            user-select: none;
+            min-width: 100px;
+        }
+
+        .trader-card:hover {
+            transform: scale(1.03);
+            box-shadow: 0 0 16px rgba(51, 215, 255, 0.1);
+        }
+
+        .trader-card:active {
+            transform: scale(0.97);
+        }
+
+        .trader-card.is-active {
+            border-color: rgba(0, 247, 178, 0.4);
+            background: rgba(0, 247, 178, 0.06);
+        }
+
+        .trader-card.is-active.spot {
+            border-color: rgba(255, 183, 51, 0.45);
+            background: rgba(255, 183, 51, 0.05);
+        }
+
+        .tc-top {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .tc-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--neutral);
+            flex-shrink: 0;
+            animation: pulse-dot 2s ease-in-out infinite;
+        }
+
+        .tc-dot.stopped {
+            background: var(--negative);
+            animation: none;
+        }
+
+        .tc-name {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: var(--text);
+            white-space: nowrap;
+        }
+
+        .tc-badge {
+            font-size: 0.6rem;
+            padding: 1px 5px;
+            border-radius: 999px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+        }
+
+        .tc-badge.spot {
+            background: rgba(255, 183, 51, 0.18);
+            color: var(--warning);
+            border: 1px solid rgba(255, 183, 51, 0.3);
+        }
+
+        .tc-badge.futures {
+            background: rgba(0, 247, 178, 0.12);
+            color: var(--positive);
+            border: 1px solid rgba(0, 247, 178, 0.25);
+        }
+
+        .tc-bottom {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-top: 2px;
+        }
+
+        .tc-uptime {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.65rem;
+            color: var(--text-soft);
+            letter-spacing: 0.04em;
+        }
+
+        .tc-balance {
+            font-size: 0.65rem;
+            color: var(--text-mute);
+        }
+
+        .tc-balance.up { color: var(--positive); }
+        .tc-balance.down { color: var(--negative); }
+        .tc-balance.flat { color: var(--text-mute); }
+
+        .tc-status-row {
+            font-size: 0.6rem;
+            color: var(--text-mute);
+            margin-top: 1px;
+        }
+
         .news-item .news-tag {
             display: inline-block;
             padding: 1px 6px;

@@ -5,7 +5,7 @@ Runs as a subprocess per trader instance, managed by server.py.
 """
 from __future__ import annotations
 
-VERSION = "1.1.1"
+VERSION = "1.2.0"
 
 import argparse
 import json
@@ -205,26 +205,58 @@ def main():
         try:
             if action in ("OPEN_LONG", "OPEN_SHORT"):
                 side = "BUY" if action == "OPEN_LONG" else "SELL"
-                sz = str(max(1, int(round(float(decision.get("size", 1))))))
+                leverage = int(decision.get("leverage", 3))
+
+                # 计算开仓数量
+                total_eq = float(account.get("totalEq", 0))
+                size_raw = decision.get("size")
+                if isinstance(size_raw, (int, float)) and size_raw > 0:
+                    sz = str(max(1, int(round(float(size_raw)))))
+                else:
+                    # 按保证金比例计算: 净值 × 3% × 杠杆
+                    pct = 0.03
+                    notional = total_eq * pct * leverage
+                    last_price = float(market_data.get(inst_id, {}).get("ticker", {}).get("last", 0) or 0)
+                    if last_price > 0:
+                        sz = str(max(1, int(round(notional / last_price))))
+                    else:
+                        sz = "1"
+
+                # 设置杠杆
+                set_leverage(inst_id, leverage)
 
                 result = place_order(
                     inst_id=inst_id,
                     side=side,
                     ord_type="MARKET",
                     sz=sz,
-                    td_mode="cross",  # 永续合约
+                    td_mode="cross",
                 )
-                # 检查 Binance 错误响应
                 if not result or result.get("code"):
                     err_msg = result.get("msg", "Unknown error") if result else "No response"
                     logging.warning(f"Order failed: {err_msg}")
                     return {"type": action, "error": err_msg}
 
-                # 提取 Binance 合约真实成交数据
-                # Binance 永续 MARKET 订单直接返回 avgPrice / executedQty
                 order_id = result.get("orderId")
                 executed_qty = float(result.get("executedQty", 0))
                 avg_price = float(result.get("avgPrice", 0) or 0)
+
+                # 开仓后立即设置止盈止损
+                sl_px = decision.get("stop_loss")
+                tp_px = decision.get("take_profit")
+                if (sl_px or tp_px) and avg_price > 0:
+                    algo_side = "SELL" if action == "OPEN_LONG" else "BUY"
+                    try:
+                        place_algo_order(
+                            inst_id=inst_id,
+                            side=algo_side,
+                            sz=str(max(1, int(round(executed_qty)))),
+                            tp_trigger_px=str(tp_px) if tp_px else None,
+                            sl_trigger_px=str(sl_px) if sl_px else None,
+                        )
+                        logging.info(f"Algo TP/SL placed: SL={sl_px}, TP={tp_px}")
+                    except Exception as e:
+                        logging.warning(f"Algo order failed (non-fatal): {e}")
 
                 return {
                     "type": action,
@@ -234,16 +266,22 @@ def main():
                 }
 
             elif action in ("CLOSE_LONG", "CLOSE_SHORT"):
+                # 平仓时用 reduce_only=True 确保不会开反向新仓
                 close_side = "SELL" if action == "CLOSE_LONG" else "BUY"
                 sz = str(max(1, int(round(float(decision.get("size", 1))))))
+
+                # 设置杠杆
+                leverage = int(decision.get("leverage", 3))
+                set_leverage(inst_id, leverage)
+
                 result = place_order(
                     inst_id=inst_id,
                     side=close_side,
                     ord_type="MARKET",
                     sz=sz,
-                    td_mode="cross",  # 永续合约
+                    td_mode="cross",
+                    reduce_only=True,
                 )
-                # 检查 Binance 错误响应
                 if not result or result.get("code"):
                     err_msg = result.get("msg", "Unknown error") if result else "No response"
                     logging.warning(f"Close order failed: {err_msg}")
@@ -384,6 +422,140 @@ def main():
 
         trades_file.write_text(json.dumps(trades[-500:], ensure_ascii=False, indent=2))
 
+    # ──────────────── 风控铁律 ────────────────
+    # 日亏熔断
+    _daily_loss_limit_pct = 0.12   # 日亏 >12% 停止新开仓
+    _consecutive_stop_loss = 0      # 连续止损次数
+    _force_hold_until: float | None = None   # 强制 HOLD 截止时间戳
+    _today_date: str = datetime.now().strftime("%Y-%m-%d")
+    _today_loss: float = 0.0        # 今日累计亏损额（仅计入亏损方向）
+
+    def _check_risk_guard(account: dict, positions: list, trades: list) -> tuple[bool, str]:
+        """风控检查，返回 (is_holded, reason)。"""
+        nonlocal _force_hold_until, _today_date, _today_loss, _consecutive_stop_loss
+
+        now = datetime.now()
+        today = now.strftime("%Y-%m-%d")
+
+        # 新的一天，重置日亏计数
+        if today != _today_date:
+            _today_date = today
+            _today_loss = 0.0
+            _consecutive_stop_loss = 0
+            logging.info("新交易日，重置风控计数器")
+
+        total_eq = float(account.get("totalEq", 0))
+        start_b = start_balance or 1.0
+        daily_pnl = total_eq - start_b
+
+        # 更新今日亏损（只累计负收益）
+        if daily_pnl < 0:
+            _today_loss = min(_today_loss + abs(daily_pnl), _today_loss)
+
+        # 1. 强制 HOLD 时段（连续止损触发）
+        if _force_hold_until and now.timestamp() < _force_hold_until:
+            remain = int(_force_hold_until - now.timestamp())
+            return True, f"风控熔断中，强制休息 {remain}s（连续止损惩罚）"
+
+        # 2. 日亏超过 12% 熔断
+        if _today_loss > 0 and start_b > 0:
+            daily_loss_pct = _today_loss / start_b
+            if daily_loss_pct >= _daily_loss_limit_pct:
+                _force_hold_until = now.timestamp() + 3600 * 24   # 停止当日剩余时间
+                return True, f"日亏 {_today_loss:.2f} USDT ({daily_loss_pct*100:.1f}%)，触发熔断，停止当日交易"
+
+        # 3. 持仓上限：最多 1 个标的
+        if len(positions) > 0:
+            return True, f"已有持仓中（{len(positions)} 个标的），优先持仓管理"
+
+        return False, ""
+
+    def _check_position_management(positions: list, market_data: dict, account: dict) -> dict | None:
+        """持仓管理检查：止盈止损/强平信号。返回平仓决策或 None。"""
+        if not positions:
+            return None
+
+        total_eq = float(account.get("totalEq", 0))
+        for p in positions:
+            sym = p.get("instId", "")
+            pos_val = float(p.get("pos", 0))
+            if pos_val == 0:
+                continue
+            direction = "long" if pos_val > 0 else "short"
+            entry_price = float(p.get("avgPx", 0))
+            mark_price = float(p.get("markPx", 0))
+            margin = float(p.get("margin", 0)) or 1.0
+            upl = float(p.get("upl", 0))
+
+            if entry_price <= 0 or mark_price <= 0:
+                continue
+
+            # 计算浮盈/保证金比
+            if margin > 0:
+                upl_ratio = upl / margin
+            else:
+                upl_ratio = 0
+
+            if direction == "short":
+                price_move = (entry_price - mark_price) / entry_price
+            else:
+                price_move = (mark_price - entry_price) / entry_price
+
+            # 止盈条件
+            if upl_ratio >= 1.0:
+                return {
+                    "action": "CLOSE_SHORT" if direction == "short" else "CLOSE_LONG",
+                    "instrument": sym,
+                    "size": str(abs(pos_val)),
+                    "reasoning": f"浮盈/保证金={upl_ratio*100:.0f}%≥100%，触发止盈保护",
+                    "confidence": 0.95,
+                }
+            if upl_ratio >= 2.0:
+                return {
+                    "action": "CLOSE_SHORT" if direction == "short" else "CLOSE_LONG",
+                    "instrument": sym,
+                    "size": str(abs(pos_val)),
+                    "reasoning": f"浮盈/保证金={upl_ratio*100:.0f}%≥200%，极端止盈",
+                    "confidence": 0.99,
+                }
+
+            # 止损条件
+            if upl_ratio <= -0.6:
+                return {
+                    "action": "CLOSE_SHORT" if direction == "short" else "CLOSE_LONG",
+                    "instrument": sym,
+                    "size": str(abs(pos_val)),
+                    "reasoning": f"浮盈/保证金={upl_ratio*100:.0f}%≤-60%，触发软止损",
+                    "confidence": 0.95,
+                }
+
+            # 资金费率极端（空头持仓时资金费率突然变负极大 = 轧空风险）
+            if direction == "short":
+                fr = market_data.get(sym, {}).get("fundingRate", 0)
+                if fr < -0.005:
+                    return {
+                        "action": "CLOSE_SHORT",
+                        "instrument": sym,
+                        "size": str(abs(pos_val)),
+                        "reasoning": f"资金费率{fr*100:.2f}%<-0.5%，轧空风险，平仓保护",
+                        "confidence": 0.90,
+                    }
+
+        return None
+
+    def _update_stop_loss_count(trades: list):
+        """更新连续止损计数。"""
+        global _consecutive_stop_loss
+        recent_closed = [t for t in trades[-3:] if t.get("tradeAction") == "CLOSE" and t.get("pnl", 0) < 0]
+        if len(recent_closed) >= 3:
+            _consecutive_stop_loss = 3
+        else:
+            _consecutive_stop_loss = max(0, _consecutive_stop_loss - 1)
+
+        if _consecutive_stop_loss >= 3:
+            _force_hold_until = datetime.now().timestamp() + 3 * 3600   # 强制休息 3 小时
+            logging.warning(f"连续 3 次止损，强制 HOLD 3 小时")
+
     # ──────────────── Main Loop ────────────────
     logging.info(f"Starting main loop (freq={freq}s, watchlist={watchlist})")
 
@@ -435,6 +607,54 @@ def main():
             account = fetch_account()
             positions = fetch_positions()
             logging.info(f"Account equity={account.get('totalEq', '?')}, positions={len(positions)}")
+
+            # ── 风控前置检查 ──
+            is_holded, hold_reason = _check_risk_guard(account, positions, trades)
+            if is_holded:
+                logging.info(f"HOLD — {hold_reason}")
+                events.append({
+                    "time": now_str(),
+                    "thought": hold_reason,
+                    "action": "HOLD",
+                    "confidence": 0,
+                    "model": decision.get("model_used", minimax_model),
+                })
+                save_state(account, positions, market_data)
+                time.sleep(max(5, freq))
+                continue
+
+            # ── 持仓管理检查（已有仓位优先处理） ──
+            pos_mgmt = _check_position_management(positions, market_data, account)
+            if pos_mgmt:
+                logging.info(f"Position management: {pos_mgmt['action']} {pos_mgmt['instrument']} — {pos_mgmt['reasoning']}")
+                exec_result = execute_decision(pos_mgmt)
+                if exec_result:
+                    pnl_val = exec_result.get("realized_pnl", 0) if "realized_pnl" in exec_result else 0
+                    trades.append({
+                        "id": str(int(time.time())),
+                        "time": now_str(),
+                        "type": "BUY" if "LONG" in pos_mgmt.get("action", "") else "SELL",
+                        "action": pos_mgmt["action"],
+                        "symbol": pos_mgmt.get("instrument", ""),
+                        "amount": pos_mgmt.get("size", 0),
+                        "price": 0,
+                        "leverage": pos_mgmt.get("leverage", 3),
+                        "direction": "long" if "LONG" in pos_mgmt.get("action", "") else "short",
+                        "tradeAction": "CLOSE",
+                        "reason": pos_mgmt.get("reasoning", ""),
+                        "confidence": pos_mgmt.get("confidence", 0),
+                        "pnl": pnl_val,
+                        "orderId": exec_result.get("orderId", "无"),
+                    })
+                    if exec_result.get("error"):
+                        trades[-1]["error"] = exec_result["error"]
+                    _update_stop_loss_count(trades)
+                time.sleep(2)
+                account = fetch_account()
+                positions = fetch_positions()
+                save_state(account, positions, market_data)
+                time.sleep(max(5, freq))
+                continue
 
             # AI decision
             logging.info("Requesting MiniMax AI decision...")

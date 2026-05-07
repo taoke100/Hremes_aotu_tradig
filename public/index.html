@@ -42,17 +42,8 @@
             <div class="topbar-side">
                 <div class="topbar-chips">
 
-                    <div class="live-chip" id="liveChip" title="当前监控交易员" style="padding-right: 6px;">
-                        <span class="status-dot" id="statusDot"></span>
-                        <div class="live-copy">
-                            <span class="label" id="liveLabel">监控终端</span>
-                            <span class="meta" id="liveMeta" style="display:none;">--</span>
-                        </div>
-                        <select id="activeTraderSelect" onchange="changeActiveTrader()" style="background:transparent; border:none; color:var(--text); font-family:'Orbitron',sans-serif; font-size:0.78rem; font-weight:700; max-width:120px; outline:none; cursor:pointer;-webkit-appearance:none; padding:0; margin-left:4px;">
-                            <option value="" style="background:#0a1324;">暂无实例</option>
-                        </select>
-                        <span class="clock" id="liveClock">00:00:00</span>
-                    </div>
+                    <div class="trader-card-stack" id="traderCardStack"></div>
+
                     <div class="streaming-chip" style="border-color: rgba(108, 183, 255, 0.4); color: var(--text-soft);" onclick="openSettingsModal()" title="系统配置中心">
                         <span style="font-size: 1.1rem; line-height: 1;">⚙️ 管理</span>
                     </div>

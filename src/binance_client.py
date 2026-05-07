@@ -289,12 +289,15 @@ def place_order(
     px: str | None = None,
     td_mode: str = "cross",
     pos_side: str | None = None,
+    reduce_only: bool = False,
     sl_trigger_px: str | None = None,
     sl_ord_px: str | None = None,
     tp_trigger_px: str | None = None,
     tp_ord_px: str | None = None,
 ) -> dict | None:
-    """下单. 现货优先(td_mode=cash), 期货用 td_mode=cross/isolated."""
+    """下单. 现货优先(td_mode=cash), 期货用 td_mode=cross/isolated.
+    reduce_only=True 时为平仓单，不开新仓。
+    """
     sym = _normalize(inst_id)
     is_spot = td_mode.lower() in ("cash", "spot")
 
@@ -323,6 +326,8 @@ def place_order(
             params["timeInForce"] = "GTC"
         if pos_side:
             params["positionSide"] = pos_side.upper()
+        if reduce_only:
+            params["reduceOnly"] = "true"
         if sl_trigger_px or tp_trigger_px:
             if sl_trigger_px:
                 params["stopPrice"] = sl_trigger_px

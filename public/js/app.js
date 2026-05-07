@@ -1125,6 +1125,7 @@
         let scanIntervalId;
         let scanFrequency = 15000;
         let systemStartTimeMs = null; // 毫秒时间戳，来自 status.system_start_time
+        let allTraderStatus = {};     // {tid: status} 每个交易员最新status.json
 
         setInterval(() => {
             document.getElementById('liveClock').textContent = new Date().toLocaleTimeString('zh-CN', {hour12:false});
@@ -1152,9 +1153,41 @@
         }, 1000);
 
         function changeActiveTrader() {
-            activeTraderId = document.getElementById('activeTraderSelect').value;
-            loadData();
+            // 已由 trader card 点击替代，保留空函数避免旧调用报错
         }
+
+        // ── 定时更新所有交易员卡片的余额 + 运行时间 ──
+        async function pollAllTraderCards() {
+            if (!activeTraderId) return;
+            for (const [tid] of Object.entries(cachedSystemConfig?.traders || {})) {
+                try {
+                    const ts = Date.now();
+                    const s = await fetchJson(`${LOCAL_API_BASE}/data/${tid}/status.json?t=${ts}`);
+                    if (!s) continue;
+
+                    const uptimeEl = document.getElementById(`tcuptime-${tid}`);
+                    if (uptimeEl && s.session_started_at) {
+                        const start = new Date(s.session_started_at.replace(' ', 'T') + 'Z').getTime();
+                        const elapsed = Math.floor((Date.now() - start) / 1000);
+                        const h = String(Math.floor(elapsed / 3600)).padStart(2, '0');
+                        const m = String(Math.floor((elapsed % 3600) / 60)).padStart(2, '0');
+                        const sec = String(elapsed % 60).padStart(2, '0');
+                        uptimeEl.textContent = `${h}:${m}:${sec}`;
+                    }
+
+                    const balEl = document.getElementById(`tcbalance-${tid}`);
+                    if (balEl && s.total_profit != null) {
+                        const p = s.total_profit;
+                        balEl.textContent = `${p >= 0 ? '+' : ''}${p.toFixed(2)}`;
+                        balEl.className = 'tc-balance ' + (p > 0 ? 'up' : p < 0 ? 'down' : 'flat');
+                    }
+                } catch (_) {}
+            }
+        }
+
+        // 每 5 秒更新卡片数据
+        setInterval(pollAllTraderCards, 5000);
+
 
         async function loadData() {
             if(!activeTraderId) {
@@ -1318,6 +1351,64 @@
             } catch(e){}
         }
 
+        // ── 渲染顶部并行交易员卡片 ──
+        async function fetchTraderContractType(tid) {
+            try {
+                const s = await fetchJson(`${LOCAL_API_BASE}/data/${tid}/status.json?t=${Date.now()}`);
+                return s?.contract_type || '';
+            } catch { return ''; }
+        }
+
+        async function renderTraderCards(traders) {
+            const stack = document.getElementById('traderCardStack');
+            if (!stack) return;
+            // 并行获取每个 trader 的 contract_type
+            const entries = Object.entries(traders);
+            const typeArr = await Promise.all(entries.map(([tid]) => fetchTraderContractType(tid)));
+            let html = '';
+            entries.forEach(([tid, info], i) => {
+                const name = info.name || tid;
+                const isRunning = info.status === 'running';
+                const contractType = typeArr[i] || '';
+                const isSpot = /spot|现货/i.test(contractType);
+                const badgeLabel = isSpot ? '现货交易' : '合约交易';
+                const badgeClass = isSpot ? 'spot' : 'futures';
+                const dotClass = isRunning ? '' : 'stopped';
+                const p = info.total_profit;
+                const profitStr = p != null ? `${p >= 0 ? '+' : ''}${Number(p).toFixed(2)}` : '--';
+                const upClass = p > 0 ? 'up' : p < 0 ? 'down' : 'flat';
+                html += `
+                <div class="trader-card${activeTraderId === tid ? ' is-active' : ''}${isSpot ? ' spot' : ''}"
+                     id="tc-${tid}"
+                     onclick="selectTraderCard('${tid}')"
+                     title="点击查看 ${name} 的策略详情">
+                    <div class="tc-top">
+                        <div class="tc-dot ${dotClass}"></div>
+                        <div class="tc-name">${name}</div>
+                        <div class="tc-badge ${badgeClass}">${badgeLabel}</div>
+                    </div>
+                    <div class="tc-bottom">
+                        <div class="tc-uptime" id="tcuptime-${tid}">--:--:--</div>
+                        <div class="tc-balance ${upClass}" id="tcbalance-${tid}">${profitStr}</div>
+                    </div>
+                </div>`;
+            });
+            stack.innerHTML = html;
+        }
+
+        function highlightActiveCard(tid) {
+            document.querySelectorAll('.trader-card').forEach(el => {
+                el.classList.toggle('is-active', el.id === `tc-${tid}`);
+            });
+        }
+
+        // ── 点击 trader card 切换活动交易员 ──
+        window.selectTraderCard = function(tid) {
+            activeTraderId = tid;
+            highlightActiveCard(tid);
+            loadData();
+        };
+
         async function fetchTradersList() {
             if (isEditingTrader) return;
             try {
@@ -1329,26 +1420,22 @@
                         ...(cachedSystemConfig || {}),
                         traders,
                     };
-                    const select = document.getElementById('activeTraderSelect');
-                    const cVal = select.value;
-                    select.innerHTML = '';
-                    
+
                     const listContainer = document.getElementById('traderListContainer');
                     listContainer.innerHTML = '';
-                    
+
                     if(Object.keys(traders).length === 0) {
-                        select.innerHTML = '<option value="">暂无交易员</option>';
+                        document.getElementById('traderCardStack').innerHTML =
+                            '<div style="font-size:0.75rem; color:var(--text-mute);">暂无运行中的交易员</div>';
                         listContainer.innerHTML = '<div class="empty-state">目前还没有激活任何交易员。</div>';
                         return;
                     }
 
+                    // ── 并行渲染顶部 trader cards ──
+                    renderTraderCards(traders);
+
+                    // ── 下方列表保持不变 ──
                     for(const [tid, info] of Object.entries(traders)) {
-                        const opt = document.createElement('option');
-                        opt.value = tid;
-                        opt.textContent = `${info.name} [${info.status.toUpperCase()}]`;
-                        opt.style.background = "#0a1324";
-                        select.appendChild(opt);
-                        
                         const statusColor = info.status === 'running' ? '#00f7b2' : '#ff5f7c';
                         const isRunning = info.status === 'running';
                         const freq = info.scan_frequency || 30;
@@ -1359,7 +1446,7 @@
                         const initialBalanceMeta = initialBalanceValue !== ''
                             ? `<span>💰 初始 ${configuredStartBalance.toFixed(2)} USDT</span>`
                             : '';
-                        
+
                         listContainer.innerHTML += `
                         <div id="trader-card-${tid}" style="border: 1px solid rgba(118,167,255,0.2); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 8px;">
                             <div id="trader-view-${tid}" style="display:flex; justify-content:space-between; align-items:center;">
@@ -1399,11 +1486,13 @@
                             </div>
                         </div>`;
                     }
-                    if(traders[cVal]) select.value = cVal;
-                    else {
-                        select.value = Object.keys(traders)[0];
+
+                    // 默认激活第一个
+                    const firstTid = Object.keys(traders)[0];
+                    if (!activeTraderId || !traders[activeTraderId]) {
+                        activeTraderId = firstTid;
                     }
-                    activeTraderId = select.value;
+                    highlightActiveCard(activeTraderId);
                     if(activeTraderId) loadData();
                 }
             } catch(e){}
