@@ -141,12 +141,14 @@ def main():
     events: list[dict] = []
     trades: list[dict] = []
     equity_history: list[dict] = []
+    spot_balance_history: list[dict] = []   # 现货账户余额历史（1分钟采样）
     start_balance: float | None = None
 
     if status_file.exists():
         try:
             old = json.loads(status_file.read_text(encoding="utf-8"))
             equity_history = old.get("equity_history", [])
+            spot_balance_history = old.get("spot_balance_history", [])
             start_balance = old.get("start_balance")
         except Exception:
             pass
@@ -171,6 +173,13 @@ def main():
 
     def fetch_account() -> dict:
         bal = get_balance("USDT", use_futures=True)
+        if bal:
+            return bal
+        return {"totalEq": "0", "availBal": "0"}
+
+    def fetch_spot_balance() -> dict:
+        """获取 Binance 现货账户 USDT 余额"""
+        bal = get_balance("USDT", use_futures=False)
         if bal:
             return bal
         return {"totalEq": "0", "availBal": "0"}
@@ -290,6 +299,16 @@ def main():
             if len(equity_history) > 480:
                 equity_history.pop(0)
 
+            # 同时采样现货账户余额（1分钟1次）
+            spot_bal = fetch_spot_balance()
+            spot_balance = float(spot_bal.get("totalEq", 0)) or float(spot_bal.get("availBal", 0)) or 0
+            spot_balance_history.append({
+                "time": now_str(),
+                "balance": spot_balance,
+            })
+            if len(spot_balance_history) > 480:
+                spot_balance_history.pop(0)
+
         open_positions = []
         for p in positions:
             pos_val = float(p.get("pos", 0))
@@ -326,6 +345,7 @@ def main():
             "yield_rate": round(yield_rate, 6),
             "total_profit": round(total_profit, 2),
             "equity_history": equity_history,
+            "spot_balance_history": spot_balance_history,
             "positions": len(positions),
             "open_positions": open_positions,
             "trades_count": len(trades),

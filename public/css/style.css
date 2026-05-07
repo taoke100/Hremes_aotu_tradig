@@ -909,91 +909,30 @@
             overflow: hidden;
             min-height: 0;
         }
-
-        /* 资金曲线+交易记录 对照表 */
-        .equity-trades-panel {
-            overflow: hidden;
-        }
-        .equity-trades-split {
+        /* 资金曲线面板 - 资金来源 chip */
+        .chart-panel .panel-head {
             display: flex;
-            gap: 0;
-            height: 340px;
-            overflow: hidden;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
         }
-        .et-column {
+        .chart-panel .panel-head > div:first-child {
             flex: 1;
             min-width: 0;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
         }
-        .et-divider {
-            width: 1px;
-            background: rgba(118, 167, 255, 0.15);
+        .chart-panel .head-chip {
             flex-shrink: 0;
-            margin: 0 2px;
+            border-color: rgba(0, 247, 178, 0.25);
         }
-        .et-col-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 8px 12px 6px;
-            border-bottom: 1px solid rgba(118, 167, 255, 0.12);
-            flex-shrink: 0;
-        }
-        .et-col-label {
-            font-size: 0.78rem;
-            font-weight: 600;
+        .chart-panel .head-chip strong {
             color: var(--cyan);
-            letter-spacing: 0.02em;
         }
-        .et-col-meta {
-            font-size: 0.7rem;
-            color: var(--text-mute);
+        .chart-panel .head-chip.spot-mode {
+            border-color: rgba(255, 183, 51, 0.35);
         }
-        .et-table-wrap {
-            flex: 1;
-            overflow-y: auto;
-            overflow-x: auto;
+        .chart-panel .head-chip.spot-mode strong {
+            color: #ffb733;
         }
-        .et-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.75rem;
-            white-space: nowrap;
-        }
-        .et-table thead th {
-            position: sticky;
-            top: 0;
-            background: rgba(10, 18, 36, 0.95);
-            color: var(--text-mute);
-            font-weight: 600;
-            padding: 6px 10px;
-            text-align: left;
-            border-bottom: 1px solid rgba(118, 167, 255, 0.12);
-            z-index: 1;
-        }
-        .et-table tbody td {
-            padding: 5px 10px;
-            border-bottom: 1px solid rgba(118, 167, 255, 0.06);
-            color: var(--text-soft);
-            vertical-align: middle;
-        }
-        .et-table tbody tr:hover td {
-            background: rgba(0, 247, 178, 0.04);
-        }
-        /* 资金快照 - 正数绿负数红 */
-        .et-equity .change-pos { color: #00f7b2; }
-        .et-equity .change-neg { color: #ff4d6a; }
-        .et-equity .change-flat { color: var(--text-mute); }
-        /* 交易操作颜色 */
-        .et-action-buy { color: #00f7b2; font-weight: 600; }
-        .et-action-sell { color: #ff6b6b; font-weight: 600; }
-        .et-dir-long { color: #00f7b2; }
-        .et-dir-short { color: #ff4d6a; }
-        .et-pnl-pos { color: #00f7b2; }
-        .et-pnl-neg { color: #ff4d6a; }
-        .et-pnl-flat { color: var(--text-mute); }
 
         .chart-panel::after,
         .thinking-panel::after {
@@ -1769,6 +1708,15 @@
             .head-chip {
                 min-width: 0;
                 padding: 6px 9px;
+            }
+
+            .chart-panel .panel-head > div:first-child .panel-desc {
+                display: none;
+            }
+            .chart-panel .head-chip {
+                font-size: 0.7rem;
+                min-width: 0;
+                padding: 5px 8px;
             }
 
             .brand-title .glow {

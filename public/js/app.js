@@ -1,7 +1,8 @@
-let chart = null;
+        let chart = null;
         let tradeSignature = '';
         let thoughtSignature = '';
         let tradePanelMode = 'position';
+        let chartDataSource = 'futures';  // 'futures' = 合约账户, 'spot' = 现货账户
         let latestTrades = [];
         let latestStatus = null;
         let latestOpenPosition = null;
@@ -776,6 +777,22 @@ let chart = null;
             updateTradePanelMode();
         }
 
+        function toggleChartDataSource() {
+            chartDataSource = chartDataSource === 'futures' ? 'spot' : 'futures';
+            updateChartDataSourceUI();
+            // 重新渲染图表
+            updateChart(latestTrades, latestStatus);
+        }
+
+        function updateChartDataSourceUI() {
+            const chip = document.getElementById('chartDataSourceChip');
+            const label = document.getElementById('chartDataSourceLabel');
+            if (!chip || !label) return;
+            const isSpot = chartDataSource === 'spot';
+            label.textContent = isSpot ? '现货账户' : '合约账户';
+            chip.classList.toggle('spot-mode', isSpot);
+        }
+
         function updatePositions(status, marketState, trades) {
             const tbody = document.getElementById('positionTable');
             const positions = Array.isArray(status?.open_positions) ? status.open_positions : [];
@@ -857,19 +874,17 @@ let chart = null;
             const startTime = latestSession?.started_at || latestStatus?.session_started_at || tradingStartTime;
             const configuredStartBalance = getConfiguredStartBalance();
             const startBalance = configuredStartBalance || Number(status?.start_balance) || Number(latestStatus?.start_balance) || initialBalance;
-            const equityHistory = Array.isArray(status?.equity_history) ? status.equity_history : [];
-            const currentEquity = Number(status?.equity) || Number(status?.balance) || startBalance;
-            if (!trades || !trades.length) {
-                if (equityHistory.length) {
-                    return {
-                        startLabel: formatChartTime(startTime ? new Date(String(startTime).replace(' ', 'T')) : new Date()),
-                        startBalance,
-                        history: equityHistory.map((point) => ({
-                            time: point.time,
-                            balance: Number(point.equity) || Number(point.balance) || startBalance
-                        }))
-                    };
-                }
+
+            // 根据选择的资金来源取对应历史数据
+            const isSpot = chartDataSource === 'spot';
+            const rawHistory = isSpot
+                ? (Array.isArray(status?.spot_balance_history) ? status.spot_balance_history : [])
+                : (Array.isArray(status?.equity_history) ? status.equity_history : []);
+            const currentEquity = isSpot
+                ? (Number(status?.balance) || startBalance)   // 现货账户用当前余额
+                : (Number(status?.equity) || Number(status?.balance) || startBalance);
+
+            if (!rawHistory.length) {
                 return {
                     startLabel: formatChartTime(startTime ? new Date(String(startTime).replace(' ', 'T')) : new Date()),
                     startBalance,
@@ -880,20 +895,13 @@ let chart = null;
                 };
             }
 
-            const history = equityHistory.length
-                ? equityHistory.map((point) => ({
-                    time: point.time,
-                    balance: Number(point.equity) || Number(point.balance) || startBalance
-                }))
-                : trades.map((t) => ({
-                    time: t.time,
-                    balance: Number(t.balance) || startBalance
-                }));
-
             return {
                 startLabel: formatChartTime(startTime ? new Date(String(startTime).replace(' ', 'T')) : new Date()),
                 startBalance,
-                history,
+                history: rawHistory.map((point) => ({
+                    time: point.time,
+                    balance: Number(point.equity) || Number(point.balance) || startBalance
+                })),
             };
         }
 
@@ -1013,84 +1021,12 @@ let chart = null;
                 });
         }
 
-        function renderEquityTradesTable(status, trades) {
-            const equityHistory = Array.isArray(status?.equity_history) ? status.equity_history : [];
-            const configuredStartBalance = getConfiguredStartBalance();
-            const startBalance = configuredStartBalance || Number(status?.start_balance) || Number(status?.balance) || initialBalance;
-            const tbody = document.getElementById('etEquityTable');
-            const countEl = document.getElementById('etEquityCount');
-            if (!tbody) return;
-
-            countEl.textContent = equityHistory.length + ' 条';
-
-            if (!equityHistory.length) {
-                tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-mute);padding:20px;">暂无资金快照</td></tr>';
-                return;
-            }
-
-            tbody.innerHTML = equityHistory.map((point, idx) => {
-                const equity = Number(point.equity) || Number(point.balance) || startBalance;
-                const prevEquity = idx > 0
-                    ? (Number(equityHistory[idx - 1].equity) || Number(equityHistory[idx - 1].balance) || startBalance)
-                    : startBalance;
-                const change = equity - prevEquity;
-                const changeClass = change > 0 ? 'change-pos' : change < 0 ? 'change-neg' : 'change-flat';
-                const changeText = change === 0 ? '±0' : (change > 0 ? '+' + change.toFixed(4) : change.toFixed(4));
-
-                return `
-                    <tr>
-                        <td>${formatBeijingCompact(point.time)}</td>
-                        <td style="color:#f4fbff;">${equity.toFixed(4)}</td>
-                        <td class="${changeClass}">${changeText}</td>
-                    </tr>
-                `;
-            }).join('');
-
-            // 交易记录侧
-            const tradeBody = document.getElementById('etTradeTable');
-            const tradeCountEl = document.getElementById('etTradeCount');
-            if (!tradeBody) return;
-
-            tradeCountEl.textContent = (trades?.length || 0) + ' 条';
-
-            if (!trades || trades.length === 0) {
-                tradeBody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-mute);padding:20px;">暂无交易记录</td></tr>';
-                return;
-            }
-
-            tradeBody.innerHTML = trades.slice().reverse().map((trade) => {
-                const isBuy = trade.type === 'BUY';
-                const direction = (trade.direction || 'long') === 'short' ? 'short' : 'long';
-                const pnl = Number(trade.pnl);
-                const pnlClass = Number.isFinite(pnl) ? (pnl > 0 ? 'et-pnl-pos' : pnl < 0 ? 'et-pnl-neg' : 'et-pnl-flat') : 'et-pnl-flat';
-                const pnlText = Number.isFinite(pnl) && pnl !== 0 ? (pnl > 0 ? '+' + pnl.toFixed(4) : pnl.toFixed(4)) : '--';
-                const tradeText = isBuy ? '买入' : '卖出';
-                const directionText = direction === 'long' ? '做多' : '做空';
-                const amount = Number(trade.amount);
-                const amountText = Number.isFinite(amount) && amount > 0 ? `${amount}` : '--';
-                const priceText = Number(trade.price) > 0 ? Number(trade.price).toFixed(4) : '市价';
-
-                return `
-                    <tr>
-                        <td>${formatBeijingCompact(trade.time)}</td>
-                        <td class="${isBuy ? 'et-action-buy' : 'et-action-sell'}">${tradeText}</td>
-                        <td class="${direction === 'long' ? 'et-dir-long' : 'et-dir-short'}">${directionText}</td>
-                        <td>${(trade.symbol || '--').replace('USDT', '').replace('-SWAP', '')}</td>
-                        <td>${amountText}</td>
-                        <td>${priceText}</td>
-                        <td class="${pnlClass}">${pnlText}</td>
-                    </tr>
-                `;
-            }).join('');
-        }
-
         function refreshStaticPanels() {
             updateTradePanelMode();
             if (latestStatus) {
                 updatePositions(latestStatus, latestMarketState, latestTrades);
             }
             updateChart(latestTrades, latestStatus);
-            renderEquityTradesTable(latestStatus, latestTrades);
         }
 
         const MARKET_COINS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'DOGE-USDT-SWAP'];
