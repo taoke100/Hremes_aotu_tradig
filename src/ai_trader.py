@@ -195,7 +195,6 @@ def main():
 
         try:
             if action in ("OPEN_LONG", "OPEN_SHORT"):
-                # 现货：买入=做多(OPEN_LONG)，卖出=做空(OPEN_SHORT)
                 side = "BUY" if action == "OPEN_LONG" else "SELL"
                 sz = str(max(1, int(round(float(decision.get("size", 1))))))
 
@@ -204,32 +203,28 @@ def main():
                     side=side,
                     ord_type="MARKET",
                     sz=sz,
-                    td_mode="cash",  # 现货
+                    td_mode="cross",  # 永续合约
                 )
-                if not result:
-                    return {"type": action, "error": "Order placement failed"}
+                # 检查 Binance 错误响应
+                if not result or result.get("code"):
+                    err_msg = result.get("msg", "Unknown error") if result else "No response"
+                    logging.warning(f"Order failed: {err_msg}")
+                    return {"type": action, "error": err_msg}
 
-                # 提取 Binance 真实成交数据
-                order_id = result.get("orderId") or result.get("orderId", "无")
+                # 提取 Binance 合约真实成交数据
+                # Binance 永续 MARKET 订单直接返回 avgPrice / executedQty
+                order_id = result.get("orderId")
                 executed_qty = float(result.get("executedQty", 0))
-                # MARKET 订单：从 fills 数组计算平均成交价
-                fills = result.get("fills", [])
-                if fills:
-                    total_cost = sum(float(f["price"]) * float(f["qty"]) for f in fills)
-                    total_qty = sum(float(f["qty"]) for f in fills)
-                    avg_price = total_cost / total_qty if total_qty > 0 else 0.0
-                else:
-                    avg_price = float(result.get("price", 0) or 0)
+                avg_price = float(result.get("avgPrice", 0) or 0)
 
                 return {
                     "type": action,
-                    "orderId": order_id,
+                    "orderId": str(order_id) if order_id else "无",
                     "executedQty": executed_qty,
                     "price": avg_price,
                 }
 
             elif action in ("CLOSE_LONG", "CLOSE_SHORT"):
-                # 现货平仓：平多仓=卖出，平空仓=买入
                 close_side = "SELL" if action == "CLOSE_LONG" else "BUY"
                 sz = str(max(1, int(round(float(decision.get("size", 1))))))
                 result = place_order(
@@ -237,25 +232,21 @@ def main():
                     side=close_side,
                     ord_type="MARKET",
                     sz=sz,
-                    td_mode="cash",
+                    td_mode="cross",  # 永续合约
                 )
-                if not result:
-                    return {"type": action, "error": "Close order failed"}
+                # 检查 Binance 错误响应
+                if not result or result.get("code"):
+                    err_msg = result.get("msg", "Unknown error") if result else "No response"
+                    logging.warning(f"Close order failed: {err_msg}")
+                    return {"type": action, "error": err_msg}
 
-                # 提取 Binance 真实成交数据
-                order_id = result.get("orderId") or result.get("orderId", "无")
+                order_id = result.get("orderId")
                 executed_qty = float(result.get("executedQty", 0))
-                fills = result.get("fills", [])
-                if fills:
-                    total_cost = sum(float(f["price"]) * float(f["qty"]) for f in fills)
-                    total_qty = sum(float(f["qty"]) for f in fills)
-                    avg_price = total_cost / total_qty if total_qty > 0 else 0.0
-                else:
-                    avg_price = float(result.get("price", 0) or 0)
+                avg_price = float(result.get("avgPrice", 0) or 0)
 
                 return {
                     "type": action,
-                    "orderId": order_id,
+                    "orderId": str(order_id) if order_id else "无",
                     "executedQty": executed_qty,
                     "price": avg_price,
                 }
@@ -280,7 +271,7 @@ def main():
 
         total_eq = float(account.get("totalEq", 0))
         details = account.get("details", [])
-        avail_bal = float(details[0].get("availBal", 0)) if details else float(account.get("availBal", 0))
+        avail_bal = float(details[0].get("availableBalance", 0)) if details else float(account.get("availBal", 0))
         unrealized = sum(float(p.get("upl", 0)) for p in positions)
 
         if start_balance is None:
@@ -340,13 +331,11 @@ def main():
             "trades_count": len(trades),
             "mode": f"{_ex_name}-ai-agent",
             "exchange": _ex_name.lower(),
-            # contract_type 动态化：现货(cash)显示"现货"，期货显示"USDT-M永续"
-            "contract_type": "现货",
+            # contract_type 动态化：现货(cash)显示"现货"，期货显示"U本位永续"
+            "contract_type": "U本位永续" if _ex_name != "spot" else "现货",
             "system_start_time": system_start_time,
             "watchlist": watchlist,
             "top_signal": top_signal,
-            "events": [e if isinstance(e, str) else e.get("thought", e.get("reasoning", str(e))) for e in events[-10:]],
-            "source": "minimax_ai",
             "strategy_v2": {
                 "name": trader_info.get("name", f"{_ex_name} AI Strategy"),
                 "entryLogic": "MiniMax AI 分析决策",
@@ -356,9 +345,11 @@ def main():
             "strategy_params": {
                 "take_profit": "+30%卖50% / +50%卖80%",
                 "stop_loss": "买入价-5%止损",
-                "leverage": "现货（无杠杆）",
+                "leverage": "3x 永续",
                 "entry_logic": "RSI+价格形态+成交量+趋势四维信号",
             },
+            "events": [e if isinstance(e, str) else e.get("thought", e.get("reasoning", str(e))) for e in events[-10:]],
+            "source": "minimax_ai",
         }
 
         status_file.write_text(json.dumps(status_payload, ensure_ascii=False, indent=2))

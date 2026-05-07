@@ -66,6 +66,7 @@ def _get(path: str, params: dict | None = None, auth: bool = False, use_futures:
 
 def _post(path: str, params: dict, auth: bool = True, use_futures: bool = False) -> dict | list | None:
     url = (FUTURES_URL if use_futures else BASE_URL) + path
+    h = _headers()
     if auth:
         p = dict(params)
         p["timestamp"] = int(time.time() * 1000)
@@ -73,16 +74,32 @@ def _post(path: str, params: dict, auth: bool = True, use_futures: bool = False)
         p["signature"] = _sign(p)
         url += "?" + urlencode(sorted(p.items()))
         try:
-            r = requests.get(url, headers=_headers(), timeout=10)
+            r = requests.post(url, headers=h, timeout=10)
             return r.json()
         except Exception as e:
-            logger.error(f"GET {url} error: {e}")
+            logger.error(f"POST {url} error: {e}")
             return None
     try:
-        r = requests.post(url, headers=_headers(), json=params, timeout=10)
+        r = requests.post(url, headers=h, json=params, timeout=10)
         return r.json()
     except Exception as e:
         logger.error(f"POST {url} error: {e}")
+        return None
+
+
+def _get_auth(path: str, params: dict | None = None, use_futures: bool = False) -> dict | list | None:
+    """Binance authenticated GET (signature required for /fapi/* and /api/* endpoints)."""
+    url = (FUTURES_URL if use_futures else BASE_URL) + path
+    p = dict(params) if params else {}
+    p["timestamp"] = int(time.time() * 1000)
+    p["recvWindow"] = 5000
+    p["signature"] = _sign(p)
+    url += "?" + urlencode(sorted(p.items()))
+    try:
+        r = requests.get(url, headers=_headers(), timeout=10)
+        return r.json()
+    except Exception as e:
+        logger.error(f"GET {url} error: {e}")
         return None
 
 
@@ -200,15 +217,18 @@ def get_top_gainers(
 def get_balance(ccy: str = "USDT", use_futures: bool = False) -> dict | None:
     """获取账户余额. use_futures=True 强制查合约，否则查现货."""
     if use_futures:
-        data = _post("/fapi/v2/balance", {}, auth=True, use_futures=True)
+        data = _get_auth("/fapi/v2/balance", {}, use_futures=True)
         if isinstance(data, list):
             for b in data:
                 if b.get("asset") == ccy:
+                    wallet = b.get("balance", "0")
+                    cross_pnl = b.get("crossUnPnl", "0")
                     return {
-                        "totalEq":     b.get("marginBalance", "0"),
-                        "availBal":    b.get("availableBalance", "0"),
-                        "walletBalance": b.get("balance", "0"),
-                        "crossUnPnl":  b.get("crossUnPnl", "0"),
+                        "totalEq":       str(float(wallet) + float(cross_pnl)),  # 净值 = 钱包 + 未实现盈亏
+                        "availBal":      b.get("availableBalance", "0"),           # 可用余额（别名兼容ai_trader）
+                        "walletBalance": wallet,                                  # 钱包余额
+                        "crossUnPnl":    cross_pnl,
+                        "marginBalance": str(float(wallet) + float(cross_pnl)),   # 保证金余额 = 净值
                         "details": [b],
                     }
         return None
@@ -232,7 +252,7 @@ def get_positions(inst_type: str = "SWAP") -> list:
     """获取所有持仓. 现货返回 [], 期货返回实际持仓."""
     if inst_type != "SWAP":
         return []
-    data = _post("/fapi/v2/positionRisk", {"marginAsset": "USDT"}, auth=True, use_futures=True)
+    data = _get_auth("/fapi/v2/positionRisk", {"marginAsset": "USDT"}, use_futures=True)
     if not isinstance(data, list):
         return []
     out = []

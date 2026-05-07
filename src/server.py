@@ -564,4 +564,4 @@ if __name__ == "__main__":
     for tid, tinfo in config.get("traders", {}).items():
         tinfo["status"] = "stopped"
     save_system_config(config)
-    app.run(host="127.0.0.1", port=8888)
+    app.run(host="0.0.0.0", port=8888)
