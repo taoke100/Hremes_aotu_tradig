@@ -205,22 +205,28 @@ def main():
         try:
             if action in ("OPEN_LONG", "OPEN_SHORT"):
                 side = "BUY" if action == "OPEN_LONG" else "SELL"
-                leverage = int(decision.get("leverage", 3))
 
                 # 计算开仓数量
+                # Binance USDT-M 永续最低名义价值 5 USDT
+                MIN_NOTIONAL = 5.0
                 total_eq = float(account.get("totalEq", 0))
+                leverage = int(decision.get("leverage", 3))
+                last_price = float(market_data.get(inst_id, {}).get("ticker", {}).get("last", 0) or 0)
+                if last_price <= 0:
+                    last_price = float(get_ticker(inst_id).get("lastPrice", 0) or 0)
+
                 size_raw = decision.get("size")
                 if isinstance(size_raw, (int, float)) and size_raw > 0:
-                    sz = str(max(1, int(round(float(size_raw)))))
+                    raw_sz = max(1, int(round(float(size_raw))))
                 else:
-                    # 按保证金比例计算: 净值 × 3% × 杠杆
+                    # 按保证金比例计算: 净值 × 3% × 杠杆 → 名义价值
                     pct = 0.03
                     notional = total_eq * pct * leverage
-                    last_price = float(market_data.get(inst_id, {}).get("ticker", {}).get("last", 0) or 0)
-                    if last_price > 0:
-                        sz = str(max(1, int(round(notional / last_price))))
-                    else:
-                        sz = "1"
+                    # 确保不低于最低名义价值
+                    notional = max(notional, MIN_NOTIONAL)
+                    raw_sz = max(1, int(round(notional / last_price))) if last_price > 0 else 1
+
+                sz = str(raw_sz)
 
                 # 设置杠杆
                 set_leverage(inst_id, leverage)
