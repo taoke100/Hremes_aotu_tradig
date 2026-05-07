@@ -253,6 +253,14 @@ app.post("/api/traders/:trader_id/stop", (req: Request, res: Response) => {
 app.delete("/api/traders/:trader_id", (req: Request, res: Response) => {
   const trader_id = String(req.params.trader_id);
   stopTraderProcess(trader_id);
+  const cfg = loadSystemConfig();
+  if (cfg.traders[trader_id]) {
+    delete cfg.traders[trader_id];
+    console.log(`[DELETE] Deleted ${trader_id}, remaining:`, Object.keys(cfg.traders));
+    saveSystemConfig(cfg);
+  } else {
+    console.log(`[DELETE] ${trader_id} not found in config`);
+  }
   res.json({ status: "deleted" });
 });
 
