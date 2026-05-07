@@ -1,8 +1,9 @@
 /**
- * Binance API Client — TypeScript (Node 22+ native fetch)
+ * Binance API Client — TypeScript (undici fetch for Node 22+)
  * Async/concurrent API calls for maximum throughput.
  */
 import crypto from "node:crypto";
+import { fetch } from "undici";
 import type {
   BinanceTicker,
   BinanceKline,
