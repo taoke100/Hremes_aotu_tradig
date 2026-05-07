@@ -1337,8 +1337,8 @@
                 if(res.ok) {
                     const settings = await res.json();
                     cachedSystemConfig = settings;
-                    const brand = settings.web_brand || 'OpenClaw';
-                    const title = settings.web_title || 'OKX AI Trading Challenge';
+                    const brand = settings.web_brand || 'Hermes';
+                    const title = settings.web_title || 'Hermes AI Trading Kit';
                     document.title = `${brand} - ${title}`;
                     const brandEl = document.getElementById('brandName');
                     const subtitleEl = document.getElementById('brandSubtitle');
