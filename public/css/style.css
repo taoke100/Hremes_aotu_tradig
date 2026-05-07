@@ -127,6 +127,44 @@
             text-transform: uppercase;
         }
 
+        .runtime-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 6px;
+            padding: 3px 10px 3px 8px;
+            border-radius: 999px;
+            background: rgba(7, 16, 31, 0.55);
+            border: 1px solid rgba(108, 183, 255, 0.18);
+            font-size: 0.7rem;
+            color: var(--text-soft);
+        }
+
+        .rb-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--neutral);
+            animation: pulse-dot 2s ease-in-out infinite;
+        }
+
+        .rb-uptime {
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 500;
+            color: var(--text);
+            letter-spacing: 0.06em;
+        }
+
+        .rb-since {
+            color: var(--text-mute);
+            font-size: 0.65rem;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.75); }
+        }
+
         .brand-title {
             margin-top: 10px;
             margin-bottom: 12px;
