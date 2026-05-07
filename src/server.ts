@@ -4,7 +4,8 @@
  */
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
-import { readFileSync, existsSync } from "node:fs";
+import multer from "multer";
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, ChildProcess } from "node:child_process";
@@ -51,9 +52,22 @@ app.use(express.json());
 // Serve public static files
 app.use(express.static(PUBLIC_DIR));
 
+// ── Multer (multipart/form-data for trader creation) ──────────
+const upload = multer({ storage: multer.memoryStorage() });
+
 // ── Config Helpers ───────────────────────────────────────────
 
-interface TraderConfig { name: string; exchange: string; watchlist: string[]; scan_frequency: number; skill_content?: string; initial_balance?: number }
+interface TraderConfig {
+  status?: string;
+  name: string;
+  exchange: string;
+  ai_provider: string;
+  watchlist?: string[];
+  scan_frequency: number;
+  skill_content?: string;
+  skill_filename?: string;
+  initial_balance?: number;
+}
 interface SystemConfig { traders: Record<string, TraderConfig> }
 
 function loadSystemConfig(): SystemConfig {
@@ -64,9 +78,8 @@ function loadSystemConfig(): SystemConfig {
 }
 
 function saveSystemConfig(cfg: SystemConfig): void {
-  // Ensure directories exist
-  if (!existsSync(DATA_DIR)) import("node:fs").then(({ mkdirSync }) => mkdirSync(DATA_DIR, { recursive: true }));
-  import("node:fs").then(({ writeFileSync }) => writeFileSync(SYSTEM_CONFIG_FILE, JSON.stringify(cfg, null, 2), "utf-8"));
+  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+  writeFileSync(SYSTEM_CONFIG_FILE, JSON.stringify(cfg, null, 2), "utf-8");
 }
 
 // ── Trader Process Management ────────────────────────────────
@@ -169,6 +182,38 @@ app.get("/api/traders", (_req: Request, res: Response) => {
     result[id] = getTraderInfo(id);
   }
   res.json(result);
+});
+
+// Create trader (multipart/form-data: id, name, ai_provider, exchange, scan_frequency, initial_balance, skill_file)
+app.post("/api/traders", upload.single("skill_file"), (req: Request, res: Response) => {
+  const id = req.body.id as string;
+  if (!id || typeof id !== "string" || id.trim() === "") {
+    res.status(400).json({ error: "id is required" });
+    return;
+  }
+  const cfg = loadSystemConfig();
+  if (cfg.traders[id]) {
+    res.status(409).json({ error: `Trader '${id}' already exists` });
+    return;
+  }
+  const skillContent = req.file
+    ? req.file.buffer.toString("utf-8")
+    : (req.body.skill_content as string | undefined) ?? "";
+
+  cfg.traders[id] = {
+    name: (req.body.name as string) ?? id,
+    exchange: (req.body.exchange as string) ?? "binance",
+    ai_provider: (req.body.ai_provider as string) ?? "",
+    scan_frequency: parseInt(req.body.scan_frequency as string) || 30,
+    initial_balance: req.body.initial_balance
+      ? parseFloat(req.body.initial_balance as string)
+      : undefined,
+    skill_content: skillContent,
+    skill_filename: req.file?.originalname ?? "",
+    status: "stopped",
+  };
+  saveSystemConfig(cfg);
+  res.json({ status: "created", id, ...getTraderInfo(id) });
 });
 
 // Start trader
