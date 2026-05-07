@@ -260,7 +260,9 @@ app.delete("/api/traders/:trader_id", (req: Request, res: Response) => {
   if (cfg.traders[trader_id]) {
     delete cfg.traders[trader_id];
     console.log(`[DELETE] Deleted ${trader_id}, remaining:`, Object.keys(cfg.traders));
-    saveSystemConfig(cfg);
+    // Direct write — do NOT use saveSystemConfig() which re-merges with on-disk state
+    if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+    writeFileSync(SYSTEM_CONFIG_FILE, JSON.stringify(cfg, null, 2), "utf-8");
   } else {
     console.log(`[DELETE] ${trader_id} not found in config`);
   }
