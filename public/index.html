@@ -195,6 +195,59 @@
                     </div>
                 </section>
 
+                <section class="shell-card panel equity-trades-panel">
+                    <div class="panel-head">
+                        <div>
+                            <div class="panel-kicker">成交流水</div>
+                            <div class="panel-title">资金曲线 · 交易记录</div>
+                            <div class="panel-desc">左侧资金快照（1分钟采样），右侧对应时间成交，并排对照。</div>
+                        </div>
+                    </div>
+                    <div class="equity-trades-split">
+                        <div class="et-column et-equity">
+                            <div class="et-col-header">
+                                <span class="et-col-label">📉 资金快照</span>
+                                <span class="et-col-meta" id="etEquityCount">-- 条</span>
+                            </div>
+                            <div class="et-table-wrap">
+                                <table class="et-table">
+                                    <thead>
+                                        <tr>
+                                            <th>时间</th>
+                                            <th>净值 (USDT)</th>
+                                            <th>变化</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="etEquityTable"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="et-divider"></div>
+                        <div class="et-column et-trades">
+                            <div class="et-col-header">
+                                <span class="et-col-label">📋 交易记录</span>
+                                <span class="et-col-meta" id="etTradeCount">-- 条</span>
+                            </div>
+                            <div class="et-table-wrap">
+                                <table class="et-table">
+                                    <thead>
+                                        <tr>
+                                            <th>时间</th>
+                                            <th>操作</th>
+                                            <th>方向</th>
+                                            <th>币种</th>
+                                            <th>数量</th>
+                                            <th>价格</th>
+                                            <th>盈亏</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="etTradeTable"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
                 <section class="shell-card panel strategy-panel">
                     <div class="strategy-shell">
                         <div class="strategy-header">
