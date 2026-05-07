@@ -12,7 +12,7 @@ import {
   setLeverage,
   normalize,
 } from "./binance.js";
-import { AIEngine } from "./ai_engine.js";
+import { AIEngine, type AIEngineConfig } from "./ai_engine.js";
 import type {
   AIDecision,
   EquityPoint,
@@ -47,7 +47,7 @@ function loadConfig(): SystemConfig {
   if (existsSync(SYSTEM_CONFIG_FILE)) {
     return JSON.parse(readFileSync(SYSTEM_CONFIG_FILE, "utf-8"));
   }
-  return { traders: {} };
+  return { traders: {}, ai_providers: {}, exchanges: {} };
 }
 
 function loadTraderConfig(traderId: string): TraderConfig | null {
@@ -109,7 +109,23 @@ export class Trader {
     this.traderId = traderId;
     this.config = cfg;
     this.risk = newRiskState();
-    this.engine = new AIEngine();
+
+    // Load per-trader AI provider config from system config
+    const systemCfg = loadConfig();
+    const providerKey = cfg.ai_provider;
+    const providerEntry = systemCfg.ai_providers?.[providerKey];
+    if (providerEntry) {
+      const engineCfg: AIEngineConfig = {
+        apiKey: providerEntry.api_key,
+        model: providerEntry.model,
+        baseUrl: providerEntry.base_url,
+        type: providerEntry.type as "minimax" | "deepseek" | "qwen",
+      };
+      this.engine = new AIEngine(engineCfg);
+    } else {
+      this.engine = new AIEngine(); // env-var fallback
+    }
+
     this.watchlist = cfg.watchlist ?? ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
     this.skillContent = loadSkillContent(cfg);
     this.freq = cfg.scan_frequency ?? 30;

@@ -1,6 +1,6 @@
 /**
- * MiniMax + DeepSeek AI Engine
- * Primary: MiniMax, Fallback: DeepSeek (on 3 consecutive timeouts)
+ * Multi-Provider AI Engine — MiniMax / DeepSeek / Qwen
+ * Per-trader config from SystemConfig.ai_providers, env vars as fallback.
  */
 import type { AIDecision, MarketSummary, TradeRecord } from "./types.js";
 
@@ -8,6 +8,9 @@ const MINIMAX_KEY = process.env.MINIMAX_API_KEY ?? "";
 const MINIMAX_MODEL = process.env.MINIMAX_MODEL ?? "MiniMax-M2.7";
 const MINIMAX_BASE_URL = process.env.MINIMAX_BASE_URL ?? "https://api.minimax.io/v1";
 const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY ?? "";
+const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
+const DEEPSEEK_MODEL = "deepseek-chat";
+const QWEN_BASE_URL = "https://dashscope.aliyuncs.com/api/v1";
 
 const TIMEOUT_MS = 15_000;
 const TIMEOUT_THRESHOLD = 3;
@@ -168,29 +171,55 @@ function parseAIDecision(raw: string, fallbackInstrument: string): AIDecision {
 
 // ── Engine ──────────────────────────────────────────────────
 
+export interface AIEngineConfig {
+  apiKey: string;
+  model: string;
+  baseUrl: string;
+  type: "minimax" | "deepseek" | "qwen";
+}
+
 export class AIEngine {
-  private primary: AIConfig;
-  private deepseek: AIConfig | null = null;
+  private primary: AIEngineConfig;
+  private fallback: AIEngineConfig | null = null;
   private consecutiveFailures = 0;
-  private useDeepseek = false;
+  private useFallback = false;
 
-  constructor() {
-    this.primary = {
-      apiKey: MINIMAX_KEY,
-      model: MINIMAX_MODEL,
-      baseUrl: MINIMAX_BASE_URL,
-    };
-
-    if (DEEPSEEK_KEY) {
-      this.deepseek = {
-        apiKey: DEEPSEEK_KEY,
-        model: "deepseek-chat",
-        baseUrl: "https://api.deepseek.com",
+  /**
+   * @param providerConfig  Per-trader AI config from SystemConfig.ai_providers[key].
+   *                         If omitted, falls back to env vars (MiniMax primary + DeepSeek fallback).
+   */
+  constructor(providerConfig?: AIEngineConfig) {
+    if (providerConfig) {
+      // Per-trader config: use it as primary, DeepSeek env var as automatic fallback
+      this.primary = providerConfig;
+      if (DEEPSEEK_KEY && providerConfig.type !== "deepseek") {
+        this.fallback = {
+          apiKey: DEEPSEEK_KEY,
+          model: DEEPSEEK_MODEL,
+          baseUrl: DEEPSEEK_BASE_URL,
+          type: "deepseek",
+        };
+      }
+    } else {
+      // Env-var defaults (backward compat)
+      this.primary = {
+        apiKey: MINIMAX_KEY,
+        model: MINIMAX_MODEL,
+        baseUrl: MINIMAX_BASE_URL,
+        type: "minimax",
       };
+      if (DEEPSEEK_KEY) {
+        this.fallback = {
+          apiKey: DEEPSEEK_KEY,
+          model: DEEPSEEK_MODEL,
+          baseUrl: DEEPSEEK_BASE_URL,
+          type: "deepseek",
+        };
+      }
     }
 
     console.log(
-      `[AI Engine] MiniMax=${MINIMAX_MODEL} DeepSeek=${this.deepseek ? "yes" : "no"}`,
+      `[AI Engine] Primary=${this.primary.type}/${this.primary.model} Fallback=${this.fallback ? "deepseek" : "none"}`,
     );
   }
 
@@ -209,8 +238,8 @@ export class AIEngine {
       { role: "user", content: buildUserPrompt(marketData, positions, account, tradeHistory) },
     ];
 
-    const activeConfig = this.useDeepseek && this.deepseek ? this.deepseek : this.primary;
-    const modelName = this.useDeepseek ? "DeepSeek" : "MiniMax";
+    const activeConfig = this.useFallback && this.fallback ? this.fallback : this.primary;
+    const modelLabel = this.useFallback ? `${this.fallback?.type}-${this.fallback?.model}` : `${this.primary.type}-${this.primary.model}`;
 
     let raw = "";
     let usedFallback = false;
@@ -221,37 +250,32 @@ export class AIEngine {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
 
-      if (this.deepseek && !this.useDeepseek) {
-        console.warn(`[AI Engine] MiniMax failed (${msg}), switching to DeepSeek`);
+      if (this.fallback && !this.useFallback) {
+        console.warn(`[AI Engine] ${this.primary.type} failed (${msg}), switching to fallback`);
         this.consecutiveFailures++;
-        this.useDeepseek = true;
+        this.useFallback = true;
         usedFallback = true;
-        raw = await chatComplete(this.deepseek, messages, TIMEOUT_MS);
-      } else if (this.consecutiveFailures >= TIMEOUT_THRESHOLD && this.deepseek) {
-        console.warn(`[AI Engine] ${TIMEOUT_THRESHOLD} failures, trying DeepSeek`);
-        this.useDeepseek = true;
-        raw = await chatComplete(this.deepseek, messages, TIMEOUT_MS);
+        raw = await chatComplete(this.fallback, messages, TIMEOUT_MS);
+      } else if (this.consecutiveFailures >= TIMEOUT_THRESHOLD && this.fallback) {
+        console.warn(`[AI Engine] ${TIMEOUT_THRESHOLD} failures, trying fallback`);
+        this.useFallback = true;
+        raw = await chatComplete(this.fallback, messages, TIMEOUT_MS);
         usedFallback = true;
       } else {
         this.consecutiveFailures++;
-        console.error(`[AI Engine] ${modelName} error: ${msg}`);
+        console.error(`[AI Engine] ${modelLabel} error: ${msg}`);
         return {
           action: "HOLD",
           instrument: fallbackSymbol,
           confidence: 0,
           reasoning: `AI请求失败: ${msg}`,
-          model_used: modelName,
+          model_used: modelLabel,
         };
       }
     }
 
-    // Reset to MiniMax after 5 successful DeepSeek calls
-    if (usedFallback && this.consecutiveFailures === 0) {
-      // will be reset on next success
-    }
-
     const decision = parseAIDecision(raw, fallbackSymbol);
-    decision.model_used = this.useDeepseek ? "DeepSeek-chat" : MINIMAX_MODEL;
+    decision.model_used = modelLabel;
 
     console.log(
       `[AI Engine] → ${decision.action} ${decision.instrument} ` +

@@ -44,9 +44,8 @@ async function _get(
   useFutures = false,
 ): Promise<unknown> {
   const base = useFutures ? FUTURES_URL : BASE_URL;
-  const ts = Date.now();
-  const fullParams = { ...params, timestamp: ts, recvWindow: 5000 };
-  const qs = encodeParams(fullParams);
+  // Public endpoints (klines, ticker, premiumIndex) don't accept timestamp/recvWindow
+  const qs = encodeParams(params);
   const url = `${base}${path}?${qs}`;
 
   const res = await fetch(url, {
@@ -172,7 +171,7 @@ export async function getCandles(
 
 export async function getAllSwapTickers(): Promise<BinanceTicker[]> {
   try {
-    const data = (await _get("/fapi/v1/ticker/24hr")) as BinanceTicker[];
+    const data = (await _get("/fapi/v1/ticker/24hr", {}, true)) as BinanceTicker[];
     return Array.isArray(data) ? data : [];
   } catch (err) {
     console.error(`[binance] getAllSwapTickers error: ${err}`);
@@ -239,7 +238,7 @@ export async function getFundingRate(symbol: string): Promise<{
 } | null> {
   try {
     const sym = normalize(symbol);
-    const data = (await _get("/fapi/v1/premiumIndex", { symbol: sym })) as Record<string, unknown>;
+    const data = (await _get("/fapi/v1/premiumIndex", { symbol: sym }, true)) as Record<string, unknown>;
     return {
       fundingRate: parseFloat(String(data.lastFundingRate ?? 0)),
       nextFundingTime: Number(data.nextFundingTime ?? 0),
@@ -254,7 +253,7 @@ export async function getFundingRate(symbol: string): Promise<{
 export async function getOpenInterest(symbol: string): Promise<number | null> {
   try {
     const sym = normalize(symbol);
-    const data = (await _get("/fapi/v1/openInterest", { symbol: sym })) as Record<string, unknown>;
+    const data = (await _get("/fapi/v1/openInterest", { symbol: sym }, true)) as Record<string, unknown>;
     return parseFloat(String(data.openInterest ?? 0));
   } catch {
     return null;
@@ -314,7 +313,7 @@ export async function getMarketSummary(instruments: string[]): Promise<MarketSum
   );
 
   // Fetch 1h + 4h candles + OI for all instruments in parallel
-  const [c1hMap, c4hMap] = await Promise.all([
+  const [c1hMap, c4hMap, oiMap] = await Promise.all([
     Promise.allSettled(
       instruments.map(async (inst) => ({
         inst,
@@ -326,6 +325,12 @@ export async function getMarketSummary(instruments: string[]): Promise<MarketSum
         inst,
         candles: await getCandles(inst, "4h", 30),
       })),
+    ),
+    Promise.allSettled(
+      instruments.map(async (inst) => {
+        const oi = await getOpenInterest(inst);
+        return { inst, openInterest: oi ?? 0 };
+      }),
     ),
   ]);
 
@@ -380,6 +385,12 @@ export async function getMarketSummary(instruments: string[]): Promise<MarketSum
       entry.fundingRate = fr.fundingRate;
       entry.nextFundingTime = fr.nextFundingTime;
     }
+
+    const oiEntry = oiMap.find(
+      (r): r is PromiseFulfilledResult<{ inst: string; openInterest: number }> =>
+        r.status === "fulfilled" && r.value.inst === inst,
+    );
+    if (oiEntry) entry.openInterest = oiEntry.value.openInterest;
 
     result[inst] = entry;
   }

@@ -234,20 +234,27 @@ export interface TraderStatus {
 export interface TraderConfig {
   name: string;
   exchange: "binance" | "okx";
-  watchlist: string[];
+  ai_provider: string;
+  watchlist?: string[];
   scan_frequency: number;
   skill_content?: string;
+  skill_filename?: string;
   initial_balance?: number;
+}
+
+export interface AIProviderConfig {
+  type: "minimax" | "deepseek" | "qwen";
+  api_key: string;
+  base_url: string;
+  model: string;
 }
 
 export interface SystemConfig {
   traders: Record<string, TraderConfig>;
-  deepseek?: {
-    type: string;
-    model: string;
-    base_url: string;
-    api_key_env?: string;
-  };
+  ai_providers: Record<string, AIProviderConfig>;
+  exchanges: Record<string, Record<string, string>>;
+  web_brand?: string;
+  web_title?: string;
 }
 
 // ── API Types ───────────────────────────────────────────────

@@ -68,18 +68,33 @@ interface TraderConfig {
   skill_filename?: string;
   initial_balance?: number;
 }
-interface SystemConfig { traders: Record<string, TraderConfig> }
+interface SystemConfig {
+  traders: Record<string, TraderConfig>;
+  ai_providers: Record<string, { type: string; api_key: string; base_url: string; model: string }>;
+  exchanges: Record<string, Record<string, string>>;
+  web_brand?: string;
+  web_title?: string;
+}
 
 function loadSystemConfig(): SystemConfig {
   if (existsSync(SYSTEM_CONFIG_FILE)) {
     return JSON.parse(readFileSync(SYSTEM_CONFIG_FILE, "utf-8"));
   }
-  return { traders: {} };
+  return { traders: {}, ai_providers: {}, exchanges: {} };
 }
 
-function saveSystemConfig(cfg: SystemConfig): void {
+/** Deep-merge partial updates into existing system config. */
+function saveSystemConfig(updates: Partial<SystemConfig>): void {
+  const current = loadSystemConfig();
+  const merged: SystemConfig = {
+    traders: { ...current.traders, ...(updates.traders || {}) },
+    ai_providers: { ...current.ai_providers, ...(updates.ai_providers || {}) },
+    exchanges: { ...current.exchanges, ...(updates.exchanges || {}) },
+    ...(updates.web_brand !== undefined ? { web_brand: updates.web_brand } : {}),
+    ...(updates.web_title !== undefined ? { web_title: updates.web_title } : {}),
+  };
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-  writeFileSync(SYSTEM_CONFIG_FILE, JSON.stringify(cfg, null, 2), "utf-8");
+  writeFileSync(SYSTEM_CONFIG_FILE, JSON.stringify(merged, null, 2), "utf-8");
 }
 
 // ── Trader Process Management ────────────────────────────────
@@ -267,12 +282,12 @@ app.get("/api/system/config", (_req: Request, res: Response) => {
 });
 
 app.post("/api/system/config", (req: Request, res: Response) => {
-  const cfg = req.body as SystemConfig;
-  if (!cfg || !cfg.traders) {
+  const updates = req.body as Partial<SystemConfig>;
+  if (!updates || typeof updates !== "object") {
     res.status(400).json({ error: "Invalid config" });
     return;
   }
-  saveSystemConfig(cfg);
+  saveSystemConfig(updates);
   res.json({ status: "ok" });
 });
 

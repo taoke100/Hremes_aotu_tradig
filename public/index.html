@@ -342,11 +342,19 @@
                 <div style="display:flex; justify-content:space-between; margin-bottom:15px; align-items:center;">
                     <h3 style="color:var(--text); font-size:1.1rem;">AI 模型配置</h3>
                 </div>
-                <div style="font-size:0.8rem; color:var(--text-soft); margin-bottom:15px;">配置 AI 提供商的信息。当前内置支持 MiniMax、Qwen 等模型引擎。</div>
+                <div style="font-size:0.8rem; color:var(--text-soft); margin-bottom:15px;">配置 AI 提供商信息，支持 MiniMax / DeepSeek / Qwen 三种引擎。</div>
                 <div style="display:grid; gap:12px;">
                     <div class="form-group">
                         <label class="form-label">节点名称</label>
                         <input type="text" class="form-input" id="ai_node_id" value="minimax_1" placeholder="minimax_1">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">提供商</label>
+                        <select class="form-input form-select" id="ai_type" onchange="onAiTypeChange(this.value)">
+                            <option value="minimax">MiniMax</option>
+                            <option value="deepseek">DeepSeek</option>
+                            <option value="qwen">Qwen (通义千问)</option>
+                        </select>
                     </div>
                     <div class="form-group">
                         <label class="form-label">API Key</label>
@@ -367,13 +375,13 @@
                         </div>
                         <div class="form-group">
                             <label class="form-label">类型</label>
-                            <input type="text" class="form-input" value="minimax" disabled style="opacity:0.6;">
+                            <input type="text" class="form-input" id="ai_type_display" value="minimax" disabled style="opacity:0.6;">
                         </div>
                     </div>
                     <div id="aiTestResult" style="display:none; padding:8px 12px; border-radius:8px; font-size:0.8rem; margin-top:4px;"></div>
                 </div>
                 <div class="form-actions" style="justify-content:space-between;">
-                    <button type="button" class="btn btn-cancel" onclick="document.getElementById('ai_node_id').value = 'minimax_' + Math.floor(Math.random()*1000); document.getElementById('ai_api_key').value='';">➕ 新增配置</button>
+                    <button type="button" class="btn btn-cancel" onclick="onAddNewAiConfig()">➕ 新增配置</button>
                     <button type="button" class="btn btn-save" onclick="saveComponentConfig('ai')">保存 AI 配置</button>
                 </div>
             </div>

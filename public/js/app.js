@@ -1282,7 +1282,55 @@
                 console.error('loadData failed:', error);
             }
         }
+        // ── AI Provider Type Change ──────────────────────────────
+        const AI_MODEL_OPTIONS = {
+            minimax: [
+                { value: 'MiniMax-M2.7', label: 'MiniMax-M2.7' },
+                { value: 'MiniMax-M2.7-highspeed', label: 'MiniMax-M2.7-highspeed' },
+                { value: 'MiniMax-M2.5', label: 'MiniMax-M2.5' },
+            ],
+            deepseek: [
+                { value: 'deepseek-chat', label: 'deepseek-chat' },
+                { value: 'deepseek-reasoner', label: 'deepseek-reasoner' },
+                { value: 'deepseek-chat-v3', label: 'deepseek-chat-v3' },
+            ],
+            qwen: [
+                { value: 'qwen-plus', label: 'qwen-plus' },
+                { value: 'qwen-turbo', label: 'qwen-turbo' },
+                { value: 'qwen-max', label: 'qwen-max' },
+                { value: 'qwen-coder-turbo', label: 'qwen-coder-turbo' },
+            ],
+        };
+        const AI_BASE_URL_DEFAULTS = {
+            minimax: 'https://api.minimax.io/v1',
+            deepseek: 'https://api.deepseek.com',
+            qwen: 'https://dashscope.aliyuncs.com/api/v1',
+        };
 
+        function onAiTypeChange(type) {
+            document.getElementById('ai_type_display').value = type;
+            document.getElementById('ai_base_url').value = AI_BASE_URL_DEFAULTS[type] || '';
+            const modelSelect = document.getElementById('ai_model');
+            modelSelect.innerHTML = '';
+            const opts = AI_MODEL_OPTIONS[type] || AI_MODEL_OPTIONS.minimax;
+            for (const o of opts) {
+                const opt = document.createElement('option');
+                opt.value = o.value; opt.textContent = o.label;
+                modelSelect.appendChild(opt);
+            }
+            // Reset API key field when switching provider type (new provider = new key)
+            document.getElementById('ai_api_key').value = '';
+        }
+
+        function onAddNewAiConfig() {
+            const type = document.getElementById('ai_type').value;
+            const prefix = type + '_' + Math.floor(Math.random() * 1000);
+            document.getElementById('ai_node_id').value = prefix;
+            document.getElementById('ai_api_key').value = '';
+            document.getElementById('ai_base_url').value = AI_BASE_URL_DEFAULTS[type] || '';
+        }
+
+        // ── System Settings ────────────────────────────────────────
         async function fetchSystemSettings() {
             try {
                 const res = await fetch(getLocalApiUrl('/api/system/config'));
@@ -1315,10 +1363,14 @@
                     if (firstAiKey) {
                         const ai = aiProviders[firstAiKey];
                         document.getElementById('ai_node_id').value = firstAiKey;
+                        const typeVal = ai.type || 'minimax';
+                        document.getElementById('ai_type').value = typeVal;
+                        document.getElementById('ai_type_display').value = typeVal;
                         document.getElementById('ai_api_key').value = ai.api_key || '';
                         document.getElementById('ai_base_url').value = ai.base_url || 'https://api.minimax.io/v1';
-                        const modelSelect = document.getElementById('ai_model');
+                        onAiTypeChange(typeVal);
                         if (ai.model) {
+                            const modelSelect = document.getElementById('ai_model');
                             for (let opt of modelSelect.options) {
                                 if (opt.value === ai.model) { opt.selected = true; break; }
                             }
@@ -1574,9 +1626,9 @@
                 const nodeId = document.getElementById('ai_node_id').value.trim() || 'minimax_1';
                 updates.ai_providers = {
                     [nodeId]: {
-                        type: 'minimax',
+                        type: document.getElementById('ai_type').value,
                         api_key: document.getElementById('ai_api_key').value.trim(),
-                        base_url: document.getElementById('ai_base_url').value.trim() || 'https://api.minimax.io/v1',
+                        base_url: document.getElementById('ai_base_url').value.trim(),
                         model: document.getElementById('ai_model').value
                     }
                 };
