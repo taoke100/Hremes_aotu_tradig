@@ -166,7 +166,10 @@ function stopTraderProcess(traderId: string): { status: string } {
 
 function getTraderInfo(traderId: string): TraderInfo {
   const child = TRADERS[traderId];
+  const cfg = loadSystemConfig();
+  const traderCfg = cfg.traders[traderId] ?? {};
   return {
+    ...traderCfg, // name, ai_provider, exchange, scan_frequency, initial_balance, etc.
     pid: child?.pid ?? 0,
     status: child && !child.killed ? "running" : "stopped",
   };

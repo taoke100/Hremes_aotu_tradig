@@ -1466,8 +1466,7 @@
             try {
                 const res = await fetch(getLocalApiUrl('/api/traders'));
                 if(res.ok) {
-                    const data = await res.json();
-                    const traders = data.traders || {};
+                    const traders = await res.json(); // GET /api/traders returns traders dict directly
                     cachedSystemConfig = {
                         ...(cachedSystemConfig || {}),
                         traders,
@@ -1798,6 +1797,7 @@
 
         document.getElementById('settingsForm').addEventListener('submit', async(e)=>{
             e.preventDefault();
+            if (e.target !== e.currentTarget) return; // Ignore bubbled events from child forms
             const formData = new FormData(e.target);
             const body = {};
             formData.forEach((val, key) => { body[key] = val; });
