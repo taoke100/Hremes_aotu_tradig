@@ -240,6 +240,18 @@ export interface TraderConfig {
   skill_content?: string;
   skill_filename?: string;
   initial_balance?: number;
+  // Risk control (参考 nofxai13)
+  max_positions?: number;        // 最大同时持仓数，默认 3
+  max_position_value_pct?: number; // 单仓价值上限（% equity），默认 50
+  max_margin_usage_pct?: number;  // 最大保证金使用率，默认 80
+  stop_loss_pct?: number;         // 止损%（浮亏/保证金），默认 -50
+  take_profit_pct?: number;       // 止盈%（浮盈/保证金），默认 100
+  max_drawdown_pct?: number;      // 最大回撤%，默认 5
+  daily_loss_limit_pct?: number;  // 日亏损熔断%，默认 3
+  min_confidence?: number;        // 最小AI置信度，0-1，默认 0.75
+  min_risk_reward_ratio?: number; // 最小盈亏比，默认 2.0
+  default_leverage?: number;      // 默认杠杆，默认 3
+  position_size_pct?: number;     // 每次开仓仓位%（equity），默认 3
 }
 
 export interface AIProviderConfig {

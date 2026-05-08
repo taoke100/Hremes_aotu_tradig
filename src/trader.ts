@@ -72,8 +72,10 @@ interface RiskState {
 }
 
 function newRiskState(): RiskState {
+  // 参考 nofxai13: dailyLossLimitPct 默认 3%（原硬编码 12% 过高）
+  const cfg = { dailyLossLimitPct: 0.03 };
   return {
-    dailyLossLimitPct: 0.12,
+    dailyLossLimitPct: cfg.dailyLossLimitPct,
     consecutiveStopLoss: 0,
     forceHoldUntil: null,
     todayDate: new Date().toISOString().slice(0, 10),
@@ -378,8 +380,10 @@ export class Trader {
         };
       }
 
-      // Stop-loss: upl/margin <= -60%
-      if (uplRatio <= -0.6) {
+      // Stop-loss: upl/margin <= -50%（参考 nofxai13 StopLossPct，默认更严格）
+      // 若交易员配置了 stop_loss_pct 则优先使用
+      const slThreshold = this.config.stop_loss_pct ?? -0.5;
+      if (uplRatio <= slThreshold) {
         return {
           action: direction === "long" ? "CLOSE_LONG" : "CLOSE_SHORT",
           instrument: sym,
@@ -427,7 +431,7 @@ export class Trader {
     if (decision.action === "HOLD") return { success: true };
 
     const instId = normalize(decision.instrument ?? "");
-    const leverage = decision.leverage ?? 3;
+    const leverage = decision.leverage ?? this.config.default_leverage ?? 3;
 
     try {
       await setLeverage(instId, leverage);
@@ -443,8 +447,10 @@ export class Trader {
         if (decision.size && decision.size > 0) {
           rawQty = Math.max(1, Math.round(decision.size));
         } else {
-          // Notional = equity × 3% × leverage
-          const notional = Math.max(totalEq * 0.03 * leverage, MIN_NOTIONAL);
+          // Notional = equity × position_size_pct% × leverage
+          // 参考 nofxai13: position_size_pct 默认 3%（可配置）
+          const sizePct = this.config.position_size_pct ?? 0.03;
+          const notional = Math.max(totalEq * sizePct * leverage, MIN_NOTIONAL);
           rawQty = lastPx > 0 ? Math.max(1, Math.round(notional / lastPx)) : 1;
         }
 
@@ -598,7 +604,7 @@ export class Trader {
 
         // ── AI Decision ──
         console.info(`[Trader:${this.traderId}] Requesting AI decision...`);
-        const decision = await this.engine.analyzeMarket({
+        let decision = await this.engine.analyzeMarket({
           skillContent: this.skillContent,
           marketData,
           positions,
@@ -614,11 +620,32 @@ export class Trader {
           decision.model_used,
         );
 
+        // ── Risk Guard: AI 置信度门槛（参考 nofxai13 MinConfidence=75%） ──
+        const minConf = this.config.min_confidence ?? 0.75;
+        if (decision.confidence < minConf) {
+          console.warn(
+            `[Trader:${this.traderId}] AI confidence=${decision.confidence.toFixed(2)} < ${minConf}，忽略信号`,
+          );
+          decision = { action: "HOLD" } as AIDecision;
+        }
+
+        // ── Risk Guard: 最大持仓数限制（参考 nofxai13 MaxPositions=3） ──
+        if (decision.action.includes("OPEN")) {
+          const maxPos = this.config.max_positions ?? 3;
+          const currentPosCount = positions.filter((p) => parseFloat(p.pos) !== 0).length;
+          if (currentPosCount >= maxPos) {
+            console.warn(
+              `[Trader:${this.traderId}] 当前持仓${currentPosCount} >= 限制${maxPos}，禁止开新仓`,
+            );
+            decision = { action: "HOLD" } as AIDecision;
+          }
+        }
+
         // ── Execute Trade ──
         if (decision.action !== "HOLD") {
           console.info(
             `[Trader:${this.traderId}] Executing: ${decision.action} ${decision.instrument} ` +
-              `conf=${decision.confidence} lever=${decision.leverage ?? 3}`,
+              `conf=${decision.confidence.toFixed(2)} lever=${decision.leverage ?? this.config.default_leverage ?? 3}`,
           );
 
           const exec = await this._executeDecision(decision, account, marketData);

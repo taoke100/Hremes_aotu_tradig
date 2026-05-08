@@ -1339,9 +1339,9 @@
                 if(res.ok) {
                     const settings = await res.json();
                     cachedSystemConfig = settings;
-                    const brand = settings.web_brand || 'Hermes';
-                    const title = settings.web_title || 'Hermes AI Trading Kit';
-                    document.title = `${brand} - ${title}`;
+                    const brand = settings.web_brand || 'AI Trading Kit';
+                    const title = settings.web_title || 'AI 自动交易';
+                    document.title = brand;
                     const brandEl = document.getElementById('brandName');
                     const subtitleEl = document.getElementById('brandSubtitle');
                     if (brandEl) brandEl.textContent = brand;
@@ -1831,15 +1831,20 @@
         // ===== Real-time Crypto News Ticker =====
         let newsCache = [];
         async function fetchCryptoNews() {
+            console.log('[News] fetchCryptoNews called, LOCAL_API_BASE=', LOCAL_API_BASE);
             try {
-                const res = await fetch(`${LOCAL_API_BASE}/api/news`);
+                const url = `${LOCAL_API_BASE}/api/news`;
+                console.log('[News] fetching', url);
+                const res = await fetch(url);
+                console.log('[News] response ok=', res.ok, 'status=', res.status);
                 if (res.ok) {
                     const data = await res.json();
+                    console.log('[News] got', data.news?.length, 'items');
                     newsCache = data.news || [];
                     renderNewsRibbon();
                 }
             } catch(e) {
-                console.warn('News fetch error:', e);
+                console.error('[News] fetch error:', e.message || e);
             }
         }
 
@@ -1870,8 +1875,9 @@
         async function bootSequence() {
             await fetchSystemSettings();
             await fetchTradersList();
-            if(document.getElementById('activeTraderSelect').value) {
-                activeTraderId = document.getElementById('activeTraderSelect').value;
+            const traderSelect = document.getElementById('activeTraderSelect');
+            if (traderSelect && traderSelect.value) {
+                activeTraderId = traderSelect.value;
             }
             loadData();
             refreshStaticPanels();

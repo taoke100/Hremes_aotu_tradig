@@ -419,7 +419,7 @@ app.get("/api/news", async (_req: Request, res: Response) => {
           const timeout = setTimeout(() => controller.abort(), 4000);
           const resp = await fetch(url, {
             signal: controller.signal,
-            headers: { "User-Agent": "Mozilla/5.0 HermesTradingBot/1.0" },
+            headers: { "User-Agent": "Mozilla/5.0 AITradingKit/1.0" },
           });
           clearTimeout(timeout);
           if (!resp.ok) return;
@@ -480,11 +480,6 @@ app.post("/api/ai/test", async (req: Request, res: Response) => {
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
-});
-
-// News endpoint (stub)
-app.get("/api/news", (_req: Request, res: Response) => {
-  res.json([]);
 });
 
 // Catch-all → serve index.html
