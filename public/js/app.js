@@ -1106,9 +1106,11 @@
                         changeEl.className = 'coin-change ' + (pct >= 0 ? 'up' : 'down');
                     }
 
-                    if (extraEl && d?.quoteVolume24h) {
-                        const vol = parseFloat(d.quoteVolume24h).toLocaleString('en-US', { maximumFractionDigits: 0 });
-                        extraEl.textContent = `24h量 $${vol}`;
+                    if (extraEl) {
+                        const fr = d?.fundingRate !== undefined ? (parseFloat(String(d.fundingRate)) * 100).toFixed(4) : null;
+                        extraEl.textContent = fr !== null
+                            ? `资费 ${fr}% | 多空 --`
+                            : `资费 -- | 多空 --`;
                     }
                 });
             } catch (e) {

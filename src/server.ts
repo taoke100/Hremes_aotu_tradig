@@ -331,11 +331,47 @@ app.get("/api/balance", (_req: Request, res: Response) => {
 // Market data proxy
 app.get("/api/market", async (req: Request, res: Response) => {
   const symRaw = req.query.symbols;
-  const symbols = (typeof symRaw === "string" ? symRaw : Array.isArray(symRaw) ? (symRaw[0] as string) : "BTCUSDT").split(",").map((s: string) => s.trim());
+  // Default to the 4 symbols shown on the frontend market cards
+  const symbols: string[] = (() => {
+    if (symRaw === undefined || symRaw === "") {
+      return ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"];
+    }
+    const list = typeof symRaw === "string" ? symRaw : Array.isArray(symRaw) ? (symRaw[0] as string) : "BTCUSDT";
+    return list.split(",").map((s: string) => s.trim()).filter(Boolean);
+  })();
   try {
     const { getMarketSummary } = await import("./binance.js");
     const data = await getMarketSummary(symbols);
-    res.json(data);
+
+    // ── Frontend compatibility: flatten nested ticker and remap keys ──
+    // Frontend expects: marketData['BTC'] = { price, change24h, quoteVolume24h, fundingRate, ... }
+    // Binance returns:  data['BTCUSDT'] = { ticker: { last, changePct24h, quoteVol24h, ... }, fundingRate, ... }
+    const SYMBOL_MAP: Record<string, string> = {
+      BTCUSDT: "BTC",
+      ETHUSDT: "ETH",
+      SOLUSDT: "SOL",
+      DOGEUSDT: "DOGE",
+    };
+    const out: Record<string, unknown> = {};
+    for (const [inst, v] of Object.entries(data)) {
+      const label = SYMBOL_MAP[inst] ?? inst;
+      const entry = v as Record<string, unknown>;
+      out[label] = {
+        price: entry.ticker ? (entry.ticker as Record<string, string>).last : undefined,
+        change24h: entry.ticker ? (entry.ticker as Record<string, string>).changePct24h : undefined,
+        quoteVolume24h: entry.ticker ? (entry.ticker as Record<string, string>).quoteVol24h : undefined,
+        fundingRate: entry.fundingRate,
+        nextFundingTime: entry.nextFundingTime,
+        openInterest: entry.openInterest,
+        rsi_1h: entry.rsi_1h,
+        rsi_6_1h: entry.rsi_6_1h,
+        rsi_4h: entry.rsi_4h,
+        rsi_6_4h: entry.rsi_6_4h,
+        candles_1h: entry.candles_1h,
+        candles_4h: entry.candles_4h,
+      };
+    }
+    res.json(out);
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
