@@ -5,6 +5,7 @@
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import multer from "multer";
+import { fetch } from "undici";
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -374,6 +375,72 @@ app.get("/api/market", async (req: Request, res: Response) => {
       };
     }
     res.json(out);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── Crypto News via RSS aggregation ─────────────────────────────────────────
+const NEWS_SOURCES = [
+  { url: "https://www.coindesk.com/arc/outboundfeeds/rss/", source: "CoinDesk" },
+  { url: "https://cointelegraph.com/rss", source: "Cointelegraph" },
+  { url: "https://news.bitcoin.com/feed/", source: "Bitcoin.com" },
+  { url: "https://www.theblock.co/rss.xml", source: "The Block" },
+];
+
+interface NewsItem { title: string; url: string; source: string; publishedAt?: string; }
+
+// Minimal regex-based RSS item parser (no external XML deps needed)
+function parseRssItems(xml: string, source: string): NewsItem[] {
+  const items: NewsItem[] = [];
+  const itemMatches = Array.from(xml.matchAll(/<item>([\s\S]*?)<\/item>/gi));
+  for (const match of itemMatches) {
+    const itemXml = match[1];
+    const titleMatch = /<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i.exec(itemXml);
+    const linkMatch = /<link[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/link>/i.exec(itemXml);
+    const pubMatch = /<pubDate[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/pubDate>/i.exec(itemXml);
+    const title = titleMatch?.[1]?.replace(/<[^>]+>/g, "").trim() || "";
+    const url = linkMatch?.[1]?.replace(/<[^>]+>/g, "").trim() || "";
+    if (title && url) {
+      items.push({ title, url, source, publishedAt: pubMatch?.[1]?.trim() });
+    }
+    if (items.length >= 8) break; // max 8 items per source
+  }
+  return items;
+}
+
+app.get("/api/news", async (_req: Request, res: Response) => {
+  try {
+    const allItems: NewsItem[] = [];
+    await Promise.allSettled(
+      NEWS_SOURCES.map(async ({ url, source }) => {
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 4000);
+          const resp = await fetch(url, {
+            signal: controller.signal,
+            headers: { "User-Agent": "Mozilla/5.0 HermesTradingBot/1.0" },
+          });
+          clearTimeout(timeout);
+          if (!resp.ok) return;
+          const xml = await resp.text();
+          const items = parseRssItems(xml, source);
+          allItems.push(...items);
+        } catch {
+          // single source failure — skip
+        }
+      }),
+    );
+    // Deduplicate by title (some stories appear in multiple feeds)
+    const seen = new Set<string>();
+    const unique = allItems.filter((n) => {
+      const key = n.title.slice(0, 60).toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    // Newest first (roughly — RSS doesn't always have sortable dates)
+    res.json({ news: unique.slice(0, 30) });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
