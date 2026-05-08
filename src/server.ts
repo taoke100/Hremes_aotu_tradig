@@ -211,28 +211,31 @@ app.post("/api/traders", upload.single("skill_file"), (req: Request, res: Respon
     return;
   }
   const cfg = loadSystemConfig();
-  if (cfg.traders[id]) {
+  // 支持更新已存在的交易员（通过 POST 携带 id 识别）
+  const isUpdate = !!cfg.traders[id];
+  if (!isUpdate && cfg.traders[id]) {
     res.status(409).json({ error: `Trader '${id}' already exists` });
     return;
   }
   const skillContent = req.file
     ? req.file.buffer.toString("utf-8")
-    : (req.body.skill_content as string | undefined) ?? "";
+    : (req.body.skill_content as string | undefined) ?? (isUpdate ? cfg.traders[id]?.skill_content : "");
 
   cfg.traders[id] = {
-    name: (req.body.name as string) ?? id,
-    exchange: (req.body.exchange as string) ?? "binance",
-    ai_provider: (req.body.ai_provider as string) ?? "",
-    scan_frequency: parseInt(req.body.scan_frequency as string) || 30,
-    initial_balance: req.body.initial_balance
+    name: (req.body.name as string) ?? (isUpdate ? cfg.traders[id]?.name : id) ?? id,
+    exchange: (req.body.exchange as string) ?? (isUpdate ? cfg.traders[id]?.exchange : "binance") ?? "binance",
+    trading_mode: (req.body.trading_mode as "futures" | "spot") ?? (isUpdate ? cfg.traders[id]?.trading_mode : "futures") ?? "futures",
+    ai_provider: (req.body.ai_provider as string) ?? (isUpdate ? cfg.traders[id]?.ai_provider : "") ?? "",
+    scan_frequency: parseInt(req.body.scan_frequency as string) || (isUpdate ? cfg.traders[id]?.scan_frequency : 30) || 30,
+    initial_balance: req.body.initial_balance !== undefined
       ? parseFloat(req.body.initial_balance as string)
-      : undefined,
+      : (isUpdate ? cfg.traders[id]?.initial_balance : undefined),
     skill_content: skillContent,
-    skill_filename: req.file?.originalname ?? "",
-    status: "stopped",
+    skill_filename: req.file?.originalname ?? (isUpdate ? cfg.traders[id]?.skill_filename : "") ?? "",
+    status: isUpdate ? cfg.traders[id]?.status : "stopped",
   };
   saveSystemConfig(cfg);
-  res.json({ status: "created", id, ...getTraderInfo(id) });
+  res.json({ status: isUpdate ? "updated" : "created", id, ...getTraderInfo(id) });
 });
 
 // Start trader

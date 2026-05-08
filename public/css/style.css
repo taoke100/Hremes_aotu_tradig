@@ -837,6 +837,8 @@
             color: var(--text-soft);
             font-size: 0.84rem;
         }
+        .metric-note.mode-spot  { color: #f7c94b; }
+        .metric-note.mode-futures { color: #00c9a7; }
 
         .dashboard-grid {
             display: grid;

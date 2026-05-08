@@ -186,6 +186,7 @@
                 </div>
                 <div class="metric-value neutral" id="tradingCoins" style="font-size: 0.92rem; line-height: 1.42; white-space: normal; word-break: normal; overflow-wrap: anywhere;">--</div>
                 <div class="metric-note" id="contractTypeNote">--</div>
+                <div class="metric-note" id="contractModeNote">--</div>
             </div>
 
         </section>
@@ -515,6 +516,7 @@
                         <div class="form-group"><label class="form-label">交易员昵称</label><input type="text" name="name" class="form-input"></div>
                         <div class="form-group"><label class="form-label">绑定 AI 节点</label><select name="ai_provider" id="form_ai_provider" class="form-input form-select"></select></div>
                         <div class="form-group"><label class="form-label">绑定 交易所</label><select name="exchange" id="form_exchange" class="form-input form-select"></select></div>
+                        <div class="form-group"><label class="form-label">交易模式</label><select name="trading_mode" id="form_trading_mode" class="form-input form-select"><option value="futures">合约交易（永续）</option><option value="spot">现货交易</option></select></div>
                         <div class="form-group"><label class="form-label">扫描频率(秒)</label><input type="number" name="scan_frequency" class="form-input" value="30"></div>
                         <div class="form-group"><label class="form-label">初始交易金额 (USDT)</label><input type="number" name="initial_balance" class="form-input" min="0" step="0.01" placeholder="留空则自动取首次净值"></div>
                         <div class="form-group"><label class="form-label">上传 AI 策略 Skill 文件</label><input type="file" name="skill_file" class="form-input"></div>

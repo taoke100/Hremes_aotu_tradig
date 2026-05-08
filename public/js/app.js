@@ -363,10 +363,16 @@
                 }
             }
 
-            // contractTypeNote 显示合约类型 + 交易所
+            // contractTypeNote 显示 交易所 + 交易模式
             const noteEl = document.getElementById('contractTypeNote');
-            if (noteEl) {
-                noteEl.textContent = `${exchange.toUpperCase()} ${contractType}`;
+            const modeEl = document.getElementById('contractModeNote');
+            const tradingMode = status.trading_mode || 'futures';
+            const modeLabel = tradingMode === 'spot' ? '现货' : '合约';
+            const exLabel = exchange === 'binance' ? 'Binance' : exchange === 'okx_Ag' ? 'OKX' : exchange.toUpperCase();
+            if (noteEl) noteEl.textContent = exLabel;
+            if (modeEl) {
+                modeEl.textContent = modeLabel;
+                modeEl.className = 'metric-note' + (tradingMode === 'spot' ? ' mode-spot' : ' mode-futures');
             }
 
             // ── 策略参数展示（止盈 / 止损 / 杠杆 / 开仓逻辑）──
@@ -1425,21 +1431,26 @@
                 const isRunning = info.status === 'running';
                 const contractType = typeArr[i] || '';
                 const isSpot = /spot|现货/i.test(contractType);
-                const badgeLabel = isSpot ? '现货交易' : '合约交易';
-                const badgeClass = isSpot ? 'spot' : 'futures';
+                const tradingMode = info.trading_mode || (isSpot ? 'spot' : 'futures');
+                const badgeLabel = tradingMode === 'spot' ? '现货' : '合约';
+                const badgeClass = tradingMode === 'spot' ? 'spot' : 'futures';
                 const dotClass = isRunning ? '' : 'stopped';
                 const p = info.total_profit;
                 const profitStr = p != null ? `${p >= 0 ? '+' : ''}${Number(p).toFixed(2)}` : '--';
                 const upClass = p > 0 ? 'up' : p < 0 ? 'down' : 'flat';
+                const exLabel = info.exchange === 'binance' ? 'BN' : info.exchange === 'okx_Ag' ? 'OKX' : (info.exchange || '').slice(0,3).toUpperCase();
                 html += `
-                <div class="trader-card${activeTraderId === tid ? ' is-active' : ''}${isSpot ? ' spot' : ''}"
+                <div class="trader-card${activeTraderId === tid ? ' is-active' : ''}${tradingMode === 'spot' ? ' spot' : ''}"
                      id="tc-${tid}"
                      onclick="selectTraderCard('${tid}')"
                      title="点击查看 ${name} 的策略详情">
                     <div class="tc-top">
                         <div class="tc-dot ${dotClass}"></div>
                         <div class="tc-name">${name}</div>
-                        <div class="tc-badge ${badgeClass}">${badgeLabel}</div>
+                        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
+                            <div class="tc-badge ${badgeClass}">${badgeLabel}</div>
+                            <div style="font-size:0.58rem;color:var(--text-soft);letter-spacing:0.03em;">${exLabel}</div>
+                        </div>
                     </div>
                     <div class="tc-bottom">
                         <div class="tc-uptime" id="tcuptime-${tid}">--:--:--</div>
@@ -1510,8 +1521,11 @@
                                     }
                                     <div style="font-size:0.78rem; color:var(--text-mute); display:flex; gap:12px; flex-wrap:wrap;">
                                         <span>🤖 ${info.ai_provider || '--'}</span>
-                                        <span>📈 ${info.exchange || '--'}</span>
+                                        <span>📈 ${info.exchange === 'binance' ? 'Binance' : info.exchange === 'okx_Ag' ? 'OKX' : info.exchange || '--'}</span>
                                         <span>⏱️ ${freq}s</span>
+                                        ${info.trading_mode === 'spot'
+                                            ? '<span style="color:#f7c94b;">◆ 现货</span>'
+                                            : '<span style="color:#00c9a7;">◆ 合约</span>'}
                                             ${initialBalanceMeta}
                                     </div>
                                 </div>
@@ -1531,6 +1545,7 @@
                                         <div class="form-group"><label class="form-label">初始交易金额 (USDT)</label><input class="form-input" id="edit-initial-balance-${tid}" type="number" min="0" step="0.01" value="${initialBalanceValue}" placeholder="留空则自动取首次净值"></div>
                                     <div class="form-group"><label class="form-label">绑定 AI</label><select class="form-input form-select" id="edit-ai-${tid}"></select></div>
                                     <div class="form-group"><label class="form-label">绑定交易所</label><select class="form-input form-select" id="edit-ex-${tid}"></select></div>
+                                    <div class="form-group"><label class="form-label">交易模式</label><select class="form-input form-select" id="edit-mode-${tid}"><option value="futures">合约交易（永续）</option><option value="spot">现货交易</option></select></div>
                                 </div>
                                 <div style="display:flex; gap:8px; margin-top:10px; justify-content:flex-end;">
                                     <button class="btn btn-cancel" style="padding:6px 16px; font-size:0.8rem;" onclick="cancelEditTrader('${tid}')">取消</button>
@@ -1577,6 +1592,8 @@
             if(traders[tid]) {
                 aiSel.value = traders[tid].ai_provider || '';
                 exSel.value = traders[tid].exchange || '';
+                const modeSel = document.getElementById(`edit-mode-${tid}`);
+                if (modeSel) modeSel.value = traders[tid].trading_mode || 'futures';
             }
         }
 
@@ -1592,10 +1609,11 @@
             const initialBalance = document.getElementById(`edit-initial-balance-${tid}`).value.trim();
             const ai = document.getElementById(`edit-ai-${tid}`).value;
             const ex = document.getElementById(`edit-ex-${tid}`).value;
+            const mode = document.getElementById(`edit-mode-${tid}`)?.value || 'futures';
             const res = await fetch(getLocalApiUrl('/api/traders'), {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ id: tid, name, scan_frequency: freq, initial_balance: initialBalance, ai_provider: ai, exchange: ex })
+                body: JSON.stringify({ id: tid, name, scan_frequency: freq, initial_balance: initialBalance, ai_provider: ai, exchange: ex, trading_mode: mode })
             });
             if (!res.ok) {
                 const data = await res.json().catch(() => ({}));
