@@ -1087,7 +1087,7 @@
                     }
                 }
 
-                ['BTC', 'ETH', 'SOL', 'DOGE'].forEach((label) => {
+                ['BTC', 'ETH', 'SOL', 'DOGE', 'BNB', 'OKB'].forEach((label) => {
                     const d = marketData[label];
                     const priceEl = document.getElementById(`price-${label}`);
                     const changeEl = document.getElementById(`change-${label}`);

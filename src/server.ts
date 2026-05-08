@@ -334,7 +334,7 @@ app.get("/api/market", async (req: Request, res: Response) => {
   // Default to the 4 symbols shown on the frontend market cards
   const symbols: string[] = (() => {
     if (symRaw === undefined || symRaw === "") {
-      return ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"];
+      return ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "BNBUSDT", "XRPUSDT"];
     }
     const list = typeof symRaw === "string" ? symRaw : Array.isArray(symRaw) ? (symRaw[0] as string) : "BTCUSDT";
     return list.split(",").map((s: string) => s.trim()).filter(Boolean);
@@ -351,6 +351,8 @@ app.get("/api/market", async (req: Request, res: Response) => {
       ETHUSDT: "ETH",
       SOLUSDT: "SOL",
       DOGEUSDT: "DOGE",
+      BNBUSDT: "BNB",
+      XRPUSDT: "OKB",
     };
     const out: Record<string, unknown> = {};
     for (const [inst, v] of Object.entries(data)) {
