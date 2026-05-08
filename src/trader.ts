@@ -2,16 +2,7 @@
  * AI Trader — Core Trading Logic (TypeScript)
  * Single-process, async event loop with risk guards.
  */
-import {
-  getBalance,
-  getPositions,
-  getMarketSummary,
-  getTopGainers,
-  placeOrder,
-  placeAlgoOrder,
-  setLeverage,
-  normalize,
-} from "./binance.js";
+import { getExchangeAPI, type ExchangeAPI } from "./exchange_router.js";
 import { AIEngine, type AIEngineConfig } from "./ai_engine.js";
 import type {
   AIDecision,
@@ -93,6 +84,7 @@ export class Trader {
   watchlist: string[];
   skillContent: string;
   freq: number;
+  exchange: ExchangeAPI;
   startBalance: number | null = null;
   equityHistory: EquityPoint[] = [];
   spotBalanceHistory: SpotBalancePoint[] = [];
@@ -110,6 +102,7 @@ export class Trader {
 
     this.traderId = traderId;
     this.config = cfg;
+    this.exchange = getExchangeAPI(cfg.exchange ?? "binance");
     this.risk = newRiskState();
 
     // Load per-trader AI provider config from system config
@@ -437,7 +430,7 @@ export class Trader {
   ): Promise<{ success: boolean; error?: string }> {
     if (decision.action === "HOLD") return { success: true };
 
-    const instId = normalize(decision.instrument ?? "");
+    const instId = this.exchange.normalize(decision.instrument ?? "");
     const isSpot = this.config.trading_mode === "spot";
     const leverage = isSpot ? 1 : (decision.leverage ?? this.config.default_leverage ?? 3);
     const tdMode = isSpot ? "cash" : "cross";
@@ -445,7 +438,7 @@ export class Trader {
     try {
       // Spot mode: no leverage setting needed
       if (!isSpot) {
-        await setLeverage(instId, leverage);
+        await this.exchange.setLeverage(instId, leverage);
       }
 
       if (decision.action === "OPEN_LONG" || decision.action === "OPEN_SHORT") {
@@ -466,7 +459,7 @@ export class Trader {
           rawQty = lastPx > 0 ? Math.max(1, Math.round(notional / lastPx)) : 1;
         }
 
-        const result = await placeOrder({
+        const result = await this.exchange.placeOrder({
           instId,
           side,
           ordType: "MARKET",
@@ -488,7 +481,7 @@ export class Trader {
           if ((slPx || tpPx) && avgPx > 0) {
             const algoSide: "BUY" | "SELL" = decision.action === "OPEN_LONG" ? "SELL" : "BUY";
             try {
-              await placeAlgoOrder({
+              await this.exchange.placeAlgoOrder({
                 instId,
                 side: algoSide,
                 sz: String(Math.max(1, Math.round(executedQty))),
@@ -507,7 +500,7 @@ export class Trader {
 
       if (decision.action === "CLOSE_LONG" || decision.action === "CLOSE_SHORT") {
         const side = decision.action === "CLOSE_LONG" ? "SELL" : "BUY";
-        const result = await placeOrder({
+        const result = await this.exchange.placeOrder({
           instId,
           side,
           ordType: "MARKET",
@@ -542,7 +535,7 @@ export class Trader {
         // ── Build dynamic watchlist from 24h gainers ──
         let effectiveWatchlist = [...this.watchlist];
         try {
-          const gainers = await getTopGainers(20_000_000, 10, 200, 10);
+          const gainers = await this.exchange.getTopGainers(20_000_000, 10, 200, 10);
           if (gainers.length > 0) {
             effectiveWatchlist = gainers;
             console.log(`[Trader:${this.traderId}] Dynamic watchlist (${gainers.length}): ${gainers.join(", ")}`);
@@ -559,7 +552,7 @@ export class Trader {
 
         // ── Fetch all market data CONCURRENTLY ──
         console.log(`[Trader:${this.traderId}] Fetching market data for ${watchlistWithBtc.length} symbols...`);
-        const marketData = await getMarketSummary(watchlistWithBtc);
+        const marketData = await this.exchange.getMarketSummary(watchlistWithBtc);
         if (!Object.keys(marketData).length) {
           console.warn(`[Trader:${this.traderId}] No market data, retry next cycle`);
           await this._pushEvent("HOLD", 0, "未能获取市场数据，跳过");
@@ -568,8 +561,8 @@ export class Trader {
         }
 
         // ── Account & Positions ──
-        const account = (await getBalance("USDT", true)) ?? { totalEq: "0", availBal: "0" };
-        const positions = await getPositions();
+        const account = (await this.exchange.getBalance("USDT")) ?? { totalEq: "0", availBal: "0" };
+        const positions = await this.exchange.getPositions();
         console.log(
           `[Trader:${this.traderId}] Equity=${account.totalEq} | Positions=${positions.length}`,
         );
@@ -609,8 +602,8 @@ export class Trader {
             this._updateStopLossCount();
           }
           await this._sleep(2000);
-          const newAccount = (await getBalance("USDT", true)) ?? account;
-          const newPositions = await getPositions();
+          const newAccount = (await this.exchange.getBalance("USDT")) ?? account;
+          const newPositions = await this.exchange.getPositions();
           this._saveState(newAccount, newPositions, marketData);
           await this._sleep(Math.max(5, this.freq) * 1000);
           continue;
@@ -693,8 +686,8 @@ export class Trader {
           await this._sleep(2000);
         }
 
-        const finalAccount = (await getBalance("USDT", true)) ?? account;
-        const finalPositions = await getPositions();
+        const finalAccount = (await this.exchange.getBalance("USDT")) ?? account;
+        const finalPositions = await this.exchange.getPositions();
         this._saveState(finalAccount, finalPositions, marketData);
 
       } catch (e) {

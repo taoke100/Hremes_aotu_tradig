@@ -233,7 +233,7 @@ export interface TraderStatus {
 
 export interface TraderConfig {
   name: string;
-  exchange: "binance" | "okx";
+  exchange: string; // "binance" | "okx_Ag" | "okx" | etc.
   ai_provider: string;
   watchlist?: string[];
   scan_frequency: number;
