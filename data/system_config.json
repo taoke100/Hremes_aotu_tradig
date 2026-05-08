@@ -22,7 +22,7 @@
       "pid": 13089
     },
     "nike": {
-      "name": "尼柯",
+      "name": "妮可",
       "exchange": "binance",
       "ai_provider": "minimax_default",
       "scan_frequency": 30,
