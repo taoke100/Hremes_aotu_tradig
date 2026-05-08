@@ -1,6 +1,6 @@
 /**
  * Multi-Provider AI Engine — MiniMax / DeepSeek / Qwen
- * Per-trader config from SystemConfig.ai_providers, env vars as fallback.
+ * Three-tier failover: priority 1 (primary) → priority 2 (deepseek) → priority 3 (qwen)
  */
 import type { AIDecision, MarketSummary, TradeRecord } from "./types.js";
 
@@ -10,10 +10,13 @@ const MINIMAX_BASE_URL = process.env.MINIMAX_BASE_URL ?? "https://api.minimax.io
 const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY ?? "";
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 const DEEPSEEK_MODEL = "deepseek-chat";
+const QWEN_KEY = process.env.QWEN_API_KEY ?? "";
+const QWEN_MODEL = process.env.QWEN_MODEL ?? "qwen-plus";
 const QWEN_BASE_URL = "https://dashscope.aliyuncs.com/api/v1";
 
 const TIMEOUT_MS = 15_000;
-const TIMEOUT_THRESHOLD = 3;
+const FAILURE_THRESHOLD = 3;
+const RECOVERY_THRESHOLD = 5;
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -24,6 +27,13 @@ interface AIConfig {
   apiKey: string;
   model: string;
   baseUrl: string;
+}
+
+interface ProviderTier {
+  config: AIConfig;
+  type: "minimax" | "deepseek" | "qwen";
+  priority: number; // 1=primary, 2=first backup, 3=second backup
+  consecutiveFailures: number;
 }
 
 // ── Prompt Builder ───────────────────────────────────────────
@@ -179,48 +189,120 @@ export interface AIEngineConfig {
 }
 
 export class AIEngine {
-  private primary: AIEngineConfig;
-  private fallback: AIEngineConfig | null = null;
-  private consecutiveFailures = 0;
-  private useFallback = false;
+  private providers: ProviderTier[] = [];
+  private currentProviderIndex = 0;
+  private recoveryCounter = 0;
 
   /**
    * @param providerConfig  Per-trader AI config from SystemConfig.ai_providers[key].
-   *                         If omitted, falls back to env vars (MiniMax primary + DeepSeek fallback).
+   *                         If omitted, builds from env vars (MiniMax primary, DeepSeek/Qwen fallback).
    */
   constructor(providerConfig?: AIEngineConfig) {
-    if (providerConfig) {
-      // Per-trader config: use it as primary, DeepSeek env var as automatic fallback
-      this.primary = providerConfig;
-      if (DEEPSEEK_KEY && providerConfig.type !== "deepseek") {
-        this.fallback = {
-          apiKey: DEEPSEEK_KEY,
-          model: DEEPSEEK_MODEL,
-          baseUrl: DEEPSEEK_BASE_URL,
-          type: "deepseek",
-        };
-      }
-    } else {
-      // Env-var defaults (backward compat)
-      this.primary = {
-        apiKey: MINIMAX_KEY,
-        model: MINIMAX_MODEL,
-        baseUrl: MINIMAX_BASE_URL,
+    // Build provider list from env vars (all three tiers)
+    const envProviders: ProviderTier[] = [];
+
+    if (MINIMAX_KEY) {
+      envProviders.push({
+        config: {
+          apiKey: MINIMAX_KEY,
+          model: MINIMAX_MODEL,
+          baseUrl: MINIMAX_BASE_URL,
+        },
         type: "minimax",
-      };
-      if (DEEPSEEK_KEY) {
-        this.fallback = {
-          apiKey: DEEPSEEK_KEY,
-          model: DEEPSEEK_MODEL,
-          baseUrl: DEEPSEEK_BASE_URL,
-          type: "deepseek",
-        };
-      }
+        priority: 1,
+        consecutiveFailures: 0,
+      });
     }
 
-    console.log(
-      `[AI Engine] Primary=${this.primary.type}/${this.primary.model} Fallback=${this.fallback ? "deepseek" : "none"}`,
-    );
+    if (DEEPSEEK_KEY) {
+      envProviders.push({
+        config: {
+          apiKey: DEEPSEEK_KEY,
+          model: DEEPSEEK_MODEL,
+          baseUrl: DEEPSEEK_BASE_URL,
+        },
+        type: "deepseek",
+        priority: 2,
+        consecutiveFailures: 0,
+      });
+    }
+
+    if (QWEN_KEY) {
+      envProviders.push({
+        config: {
+          apiKey: QWEN_KEY,
+          model: QWEN_MODEL,
+          baseUrl: QWEN_BASE_URL,
+        },
+        type: "qwen",
+        priority: 3,
+        consecutiveFailures: 0,
+      });
+    }
+
+    if (providerConfig) {
+      // Per-trader config: use it as primary (priority 1), others from env as backup
+      const primaryTier: ProviderTier = {
+        config: providerConfig,
+        type: providerConfig.type,
+        priority: 1,
+        consecutiveFailures: 0,
+      };
+
+      // Re-assign priorities: existing env providers shift to priority 2, 3
+      const backupProviders = envProviders.filter((p) => p.type !== providerConfig.type);
+      this.providers = [primaryTier, ...backupProviders];
+    } else {
+      // Env-var defaults: use env providers sorted by priority
+      this.providers = envProviders.sort((a, b) => a.priority - b.priority);
+    }
+
+    // Filter out any providers with empty API keys (belt and suspenders)
+    this.providers = this.providers.filter((p) => p.config.apiKey);
+
+    if (this.providers.length === 0) {
+      throw new Error("[AI Engine] No AI providers available. Set MINIMAX_API_KEY, DEEPSEEK_API_KEY, or QWEN_API_KEY.");
+    }
+
+    // Ensure currentProviderIndex is valid
+    this.currentProviderIndex = 0;
+
+    const providerList = this.providers.map((p) => `${p.type}(p${p.priority})`).join(" → ");
+    console.log(`[AI Engine] Providers: ${providerList}`);
+  }
+
+  private get currentProvider(): ProviderTier {
+    return this.providers[this.currentProviderIndex];
+  }
+
+  private get primaryProvider(): ProviderTier | undefined {
+    return this.providers.find((p) => p.priority === 1);
+  }
+
+  private switchToNextProvider(): boolean {
+    const nextIndex = this.currentProviderIndex + 1;
+    if (nextIndex < this.providers.length) {
+      const nextProvider = this.providers[nextIndex];
+      console.log(`[AI Engine] ${this.currentProvider.type} failed 3x, switching to ${nextProvider.type}`);
+      this.currentProviderIndex = nextIndex;
+      return true;
+    }
+    return false;
+  }
+
+  private attemptRecoveryToPrimary(): boolean {
+    const primary = this.primaryProvider;
+    if (!primary) return false;
+
+    const currentIdx = this.currentProviderIndex;
+    const primaryIdx = this.providers.findIndex((p) => p.priority === 1);
+
+    if (primaryIdx >= 0 && primaryIdx < currentIdx) {
+      console.log(`[AI Engine] Recovery: ${this.currentProvider.type} recovered, switching back to primary`);
+      this.currentProviderIndex = primaryIdx;
+      return true;
+    }
+    return false;
   }
 
   async analyzeMarket(params: {
@@ -238,44 +320,97 @@ export class AIEngine {
       { role: "user", content: buildUserPrompt(marketData, positions, account, tradeHistory) },
     ];
 
-    const activeConfig = this.useFallback && this.fallback ? this.fallback : this.primary;
-    const modelLabel = this.useFallback ? `${this.fallback?.type}-${this.fallback?.model}` : `${this.primary.type}-${this.primary.model}`;
+    const startProviderIdx = this.currentProviderIndex;
+    const startProvider = this.currentProvider;
 
     let raw = "";
-    let usedFallback = false;
+    let attemptProviderIdx = startProviderIdx;
 
     try {
-      raw = await chatComplete(activeConfig, messages, TIMEOUT_MS);
-      this.consecutiveFailures = 0;
+      raw = await chatComplete(startProvider.config, messages, TIMEOUT_MS);
+
+      // Success: reset failure counter for this provider
+      startProvider.consecutiveFailures = 0;
+
+      // Recovery logic: if using backup provider and got success, increment recovery counter
+      if (this.currentProviderIndex > 0) {
+        this.recoveryCounter++;
+        if (this.recoveryCounter >= RECOVERY_THRESHOLD) {
+          this.attemptRecoveryToPrimary();
+          this.recoveryCounter = 0;
+        }
+      } else {
+        // Using primary, reset recovery counter
+        this.recoveryCounter = 0;
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      const failedProvider = this.providers[attemptProviderIdx];
 
-      if (this.fallback && !this.useFallback) {
-        console.warn(`[AI Engine] ${this.primary.type} failed (${msg}), switching to fallback`);
-        this.consecutiveFailures++;
-        this.useFallback = true;
-        usedFallback = true;
-        raw = await chatComplete(this.fallback, messages, TIMEOUT_MS);
-      } else if (this.consecutiveFailures >= TIMEOUT_THRESHOLD && this.fallback) {
-        console.warn(`[AI Engine] ${TIMEOUT_THRESHOLD} failures, trying fallback`);
-        this.useFallback = true;
-        raw = await chatComplete(this.fallback, messages, TIMEOUT_MS);
-        usedFallback = true;
+      console.warn(`[AI Engine] ${failedProvider.type} failed (${msg})`);
+
+      // Increment failure counter for current provider
+      failedProvider.consecutiveFailures++;
+
+      // Try next provider if current one exceeded failure threshold
+      if (failedProvider.consecutiveFailures >= FAILURE_THRESHOLD) {
+        if (this.switchToNextProvider()) {
+          // Successfully switched, try the next provider
+          attemptProviderIdx = this.currentProviderIndex;
+          try {
+            raw = await chatComplete(this.currentProvider.config, messages, TIMEOUT_MS);
+            // Success on backup provider
+            this.currentProvider.consecutiveFailures = 0;
+            // Reset recovery counter for primary if we're back on it
+            if (this.currentProviderIndex === 0) {
+              this.recoveryCounter = 0;
+            }
+          } catch (err2) {
+            const msg2 = err2 instanceof Error ? err2.message : String(err2);
+            console.error(`[AI Engine] ${this.currentProvider.type} also failed (${msg2})`);
+            this.currentProvider.consecutiveFailures++;
+
+            // All providers exhausted
+            if (this.currentProviderIndex >= this.providers.length - 1) {
+              return {
+                action: "HOLD",
+                instrument: fallbackSymbol,
+                confidence: 0,
+                reasoning: `AI请求全部失败: ${msg2}`,
+                model_used: this.currentProvider.type,
+              };
+            }
+            return {
+              action: "HOLD",
+              instrument: fallbackSymbol,
+              confidence: 0,
+              reasoning: `AI请求失败: ${msg2}`,
+              model_used: this.currentProvider.type,
+            };
+          }
+        } else {
+          // No more providers to try
+          return {
+            action: "HOLD",
+            instrument: fallbackSymbol,
+            confidence: 0,
+            reasoning: `AI请求失败: ${msg}`,
+            model_used: failedProvider.type,
+          };
+        }
       } else {
-        this.consecutiveFailures++;
-        console.error(`[AI Engine] ${modelLabel} error: ${msg}`);
         return {
           action: "HOLD",
           instrument: fallbackSymbol,
           confidence: 0,
           reasoning: `AI请求失败: ${msg}`,
-          model_used: modelLabel,
+          model_used: failedProvider.type,
         };
       }
     }
 
     const decision = parseAIDecision(raw, fallbackSymbol);
-    decision.model_used = modelLabel;
+    decision.model_used = this.currentProvider.type;
 
     console.log(
       `[AI Engine] → ${decision.action} ${decision.instrument} ` +

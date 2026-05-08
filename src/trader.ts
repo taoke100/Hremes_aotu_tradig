@@ -116,7 +116,7 @@ export class Trader {
     const systemCfg = loadConfig();
     const providerKey = cfg.ai_provider;
     const providerEntry = systemCfg.ai_providers?.[providerKey];
-    if (providerEntry) {
+    if (providerEntry?.api_key && providerEntry.api_key !== `填入你的${providerEntry.type.toUpperCase()}_API_KEY`) {
       const engineCfg: AIEngineConfig = {
         apiKey: providerEntry.api_key,
         model: providerEntry.model,
@@ -125,7 +125,14 @@ export class Trader {
       };
       this.engine = new AIEngine(engineCfg);
     } else {
-      this.engine = new AIEngine(); // env-var fallback
+      // No valid provider key — use env-var fallback (or fail gracefully)
+      try {
+        this.engine = new AIEngine();
+      } catch {
+        console.error(`[Trader:${traderId}] No AI provider available. Set MINIMAX_API_KEY / DEEPSEEK_API_KEY / QWEN_API_KEY env vars.`);
+        // Create a dummy engine that returns HOLD
+        this.engine = new AIEngine({ apiKey: "dummy", model: "dummy", baseUrl: "http://localhost", type: "deepseek" });
+      }
     }
 
     this.watchlist = cfg.watchlist ?? ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
@@ -264,7 +271,7 @@ export class Trader {
       trades_count: this.trades.length,
       mode: "binance-ai-agent-v2",
       exchange: "binance",
-      contract_type: "U本位永续",
+      contract_type: this.config.trading_mode === "spot" ? "现货" : "U本位永续",
       system_start_time: this.systemStartTime,
       watchlist: this.watchlist,
       top_signal: topSignal,
@@ -431,10 +438,15 @@ export class Trader {
     if (decision.action === "HOLD") return { success: true };
 
     const instId = normalize(decision.instrument ?? "");
-    const leverage = decision.leverage ?? this.config.default_leverage ?? 3;
+    const isSpot = this.config.trading_mode === "spot";
+    const leverage = isSpot ? 1 : (decision.leverage ?? this.config.default_leverage ?? 3);
+    const tdMode = isSpot ? "cash" : "cross";
 
     try {
-      await setLeverage(instId, leverage);
+      // Spot mode: no leverage setting needed
+      if (!isSpot) {
+        await setLeverage(instId, leverage);
+      }
 
       if (decision.action === "OPEN_LONG" || decision.action === "OPEN_SHORT") {
         const side = decision.action === "OPEN_LONG" ? "BUY" : "SELL";
@@ -459,7 +471,7 @@ export class Trader {
           side,
           ordType: "MARKET",
           sz: String(rawQty),
-          tdMode: "cross",
+          tdMode,
         });
 
         if (result.code) {
@@ -469,22 +481,24 @@ export class Trader {
         const avgPx = parseFloat(String(result.avgPrice ?? 0));
         const executedQty = parseFloat(String(result.executedQty ?? 0));
 
-        // Set TP/SL algo orders after opening
-        const slPx = decision.stop_loss;
-        const tpPx = decision.take_profit;
-        if ((slPx || tpPx) && avgPx > 0) {
-          const algoSide: "BUY" | "SELL" = decision.action === "OPEN_LONG" ? "SELL" : "BUY";
-          try {
-            await placeAlgoOrder({
-              instId,
-              side: algoSide,
-              sz: String(Math.max(1, Math.round(executedQty))),
-              tpTriggerPx: tpPx ? String(tpPx) : undefined,
-              slTriggerPx: slPx ? String(slPx) : undefined,
-            });
-            console.log(`[Trader:${this.traderId}] TP/SL placed: SL=${slPx} TP=${tpPx}`);
-          } catch (e) {
-            console.warn(`[Trader:${this.traderId}] Algo order failed (non-fatal): ${e}`);
+        // Set TP/SL algo orders after opening (spot mode: not applicable)
+        if (!isSpot) {
+          const slPx = decision.stop_loss;
+          const tpPx = decision.take_profit;
+          if ((slPx || tpPx) && avgPx > 0) {
+            const algoSide: "BUY" | "SELL" = decision.action === "OPEN_LONG" ? "SELL" : "BUY";
+            try {
+              await placeAlgoOrder({
+                instId,
+                side: algoSide,
+                sz: String(Math.max(1, Math.round(executedQty))),
+                tpTriggerPx: tpPx ? String(tpPx) : undefined,
+                slTriggerPx: slPx ? String(slPx) : undefined,
+              });
+              console.log(`[Trader:${this.traderId}] TP/SL placed: SL=${slPx} TP=${tpPx}`);
+            } catch (e) {
+              console.warn(`[Trader:${this.traderId}] Algo order failed (non-fatal): ${e}`);
+            }
           }
         }
 
@@ -498,7 +512,7 @@ export class Trader {
           side,
           ordType: "MARKET",
           sz: String(decision.size ?? 1),
-          tdMode: "cross",
+          tdMode,
           reduceOnly: true,
         });
 

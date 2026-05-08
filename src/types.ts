@@ -240,7 +240,9 @@ export interface TraderConfig {
   skill_content?: string;
   skill_filename?: string;
   initial_balance?: number;
-  // Risk control (参考 nofxai13)
+  // 交易模式：futures=永续合约（默认），spot=现货
+  trading_mode?: "futures" | "spot";
+  // 风控参数（参考 nofxai13）
   max_positions?: number;        // 最大同时持仓数，默认 3
   max_position_value_pct?: number; // 单仓价值上限（% equity），默认 50
   max_margin_usage_pct?: number;  // 最大保证金使用率，默认 80

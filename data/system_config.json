@@ -26,6 +26,7 @@
       "exchange": "binance",
       "ai_provider": "minimax_default",
       "scan_frequency": 30,
+      "trading_mode": "spot",
       "skill_content": "",
       "skill_filename": "",
       "status": "stopped"
@@ -35,6 +36,7 @@
       "exchange": "okx_Ag",
       "ai_provider": "minimax_default",
       "scan_frequency": 30,
+      "trading_mode": "spot",
       "skill_content": "",
       "skill_filename": "",
       "status": "stopped"
@@ -42,24 +44,25 @@
   },
   "ai_providers": {
     "minimax_default": {
-      "type": "deepseek",
-      "api_key": "sk-6937bd009cf94260a9b21a4511ed2bc6",
-      "base_url": "https://api.deepseek.com",
-      "model": "deepseek-chat"
+      "type": "minimax",
+      "api_key": "填入你的MINIMAX_API_KEY",
+      "base_url": "https://api.minimax.io/v1",
+      "model": "MiniMax-M2.7",
+      "priority": 1
     },
-    "ds_test1": null,
-    "qwen_trader1": null,
-    "DeepSeek": {
+    "deepseek_backup": {
       "type": "deepseek",
-      "api_key": "sk-f71a4ecf5bf348eea415dc41abc3bd60",
+      "api_key": "sk-693...2bc6",
       "base_url": "https://api.deepseek.com",
-      "model": "deepseek-chat"
+      "model": "deepseek-chat",
+      "priority": 2
     },
-    "deepseek": {
-      "type": "deepseek",
-      "api_key": "",
-      "base_url": "https://api.deepseek.com",
-      "model": "deepseek-chat"
+    "qwen_backup": {
+      "type": "qwen",
+      "api_key": "填入你的QWEN_API_KEY",
+      "base_url": "https://dashscope.aliyuncs.com/api/v1",
+      "model": "qwen-plus",
+      "priority": 3
     }
   },
   "exchanges": {
