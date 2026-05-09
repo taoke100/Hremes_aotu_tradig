@@ -407,12 +407,12 @@ export async function getBalance(ccy = "USDT", useFutures = false): Promise<Bina
 
     for (const b of data) {
       if (b.asset !== ccy) continue;
-      const wallet = parseFloat(b.walletBalance ?? "0");
+      const wallet = parseFloat(b.balance ?? b.walletBalance ?? "0");
       const crossPnl = parseFloat(b.crossUnPnl ?? "0");
       return {
         totalEq: String(wallet + crossPnl),
         availBal: b.availableBalance ?? "0",
-        walletBalance: b.walletBalance ?? "0",
+        walletBalance: b.balance ?? b.walletBalance ?? "0",
         crossUnPnl: b.crossUnPnl ?? "0",
         marginBalance: String(wallet + crossPnl),
         availableBalance: b.availableBalance ?? "0",

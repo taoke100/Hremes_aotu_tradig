@@ -290,6 +290,19 @@ export class Trader {
       "utf-8",
     );
     writeFileSync(this.tradesFilePath, JSON.stringify(this.trades.slice(-500), null, 2), "utf-8");
+
+    // ── IPC push to parent server (WebSocket broadcast) ───────
+    // Sends latest state through process IPC → server → WebSocket → browser
+    // This eliminates the file-polling path for running traders
+    if (process.send) {
+      process.send({
+        traderId: this.traderId,
+        status,
+        thinking: this.events.slice(-30),
+        trades: this.trades.slice(-500),
+        ts: Date.now(),
+      });
+    }
   }
 
   // ── Risk Guard ────────────────────────────────────────────

@@ -47,14 +47,14 @@ function _loadExchanges(): Record<string, ExchangeCreds> {
       for (const [key, ex] of Object.entries(cfg.exchanges)) {
         if (key === "binance") {
           out[key] = {
-            apiKey: (ex as { api_key?: string; apiKey?: string }).apiKey ?? "",
-            secretKey: (ex as { secret_key?: string; secretKey?: string }).secretKey ?? "",
+            apiKey: (ex as { api_key?: string; apiKey?: string }).api_key ?? (ex as { api_key?: string; apiKey?: string }).apiKey ?? "",
+            secretKey: (ex as { secret_key?: string; secretKey?: string }).secret_key ?? (ex as { secret_key?: string; secretKey?: string }).secretKey ?? "",
           };
         } else {
           // OKX
           out[key] = {
-            apiKey: (ex as { api_key?: string; apiKey?: string }).apiKey ?? "",
-            secretKey: (ex as { secret_key?: string; secretKey?: string }).secretKey ?? "",
+            apiKey: (ex as { api_key?: string; apiKey?: string }).api_key ?? (ex as { api_key?: string; apiKey?: string }).apiKey ?? "",
+            secretKey: (ex as { secret_key?: string; secretKey?: string }).secret_key ?? (ex as { secret_key?: string; secretKey?: string }).secretKey ?? "",
             passphrase: (ex as { passphrase?: string }).passphrase ?? "",
             isDemo: (ex as { is_demo?: boolean; isDemo?: boolean }).isDemo ?? false,
           };

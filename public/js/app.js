@@ -189,21 +189,24 @@
         }
 
         async function getMarketState(symbol, entryPrice, direction, amount) {
-            // Normalize symbol to OKX instId format
-            let instId = symbol || 'BTC-USDT-SWAP';
-            if (!instId.includes('-')) {
-                instId = instId.replace('USDT', '') + '-USDT-SWAP';
+            // Normalize symbol to Binance format (e.g. BTCUSDT)
+            let binanceSymbol = symbol || 'BTCUSDT';
+            // Convert OKX-style (BTC-USDT-SWAP) to Binance style (BTCUSDT)
+            if (symbol?.includes('-')) {
+                binanceSymbol = symbol.replace(/-/g, '').replace('SWAP', 'USDT');
+                // Handle BTC-USDT-SWAP → BTCUSDT, ETH-USDT-SWAP → ETHUSDT
+                binanceSymbol = binanceSymbol.replace('USDTSWAP', 'USDT');
             }
+            if (!binanceSymbol.endsWith('USDT')) binanceSymbol += 'USDT';
 
             try {
-                const response = await fetch(`https://www.okx.com/api/v5/market/ticker?instId=${instId}`, { cache: 'no-store' });
+                // Proxy through server to avoid CORS and TLS overhead
+                const response = await fetch(getLocalApiUrl(`/api/price?symbol=${binanceSymbol}`));
                 const data = await response.json();
-                const tickerData = data?.data?.[0];
-                const currentPrice = Number(tickerData?.last) || 0;
+                const currentPrice = Number(data?.price) || 0;
                 const qty = Number(amount) || 1;
                 const basePnl = entryPrice ? (currentPrice - Number(entryPrice)) * qty : 0;
                 const pnl = (direction || 'long') === 'short' ? -basePnl : basePnl;
-
                 return { price: currentPrice, pnl };
             } catch (error) {
                 return { price: Number(entryPrice) || 0, pnl: 0 };
@@ -342,7 +345,7 @@
             // ── 交易标的 + 合约类型动态显示 ──
             const watchlist = Array.isArray(status.watchlist) ? status.watchlist : [];
             const contractType = status.contract_type || '--';
-            const exchange = status.exchange || '--';
+            const exchange = status.exchange ?? latestBalanceData?.exchange ?? '--';
 
             // tradingCoins 显示交易对列表（如 BTC/USDT, ETH/USDT...）
             const coinsEl = document.getElementById('tradingCoins');
@@ -366,7 +369,7 @@
             // contractTypeNote 显示 交易所 + 交易模式
             const noteEl = document.getElementById('contractTypeNote');
             const modeEl = document.getElementById('contractModeNote');
-            const tradingMode = status.trading_mode || 'futures';
+            const tradingMode = status.trading_mode ?? (latestBalanceData?.accountType === 'spot' ? 'spot' : 'futures') ?? 'futures';
             const modeLabel = tradingMode === 'spot' ? '现货' : '合约';
             const exLabel = exchange === 'binance' ? 'Binance' : exchange === 'okx_Ag' ? 'OKX' : exchange.toUpperCase();
             if (noteEl) noteEl.textContent = exLabel;
@@ -1054,42 +1057,86 @@
         const MARKET_COINS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'DOGE-USDT-SWAP'];
         const COIN_LABELS = { 'BTC-USDT-SWAP': 'BTC', 'ETH-USDT-SWAP': 'ETH', 'SOL-USDT-SWAP': 'SOL', 'DOGE-USDT-SWAP': 'DOGE' };
 
+        // ── 全局状态（必须在 fetchMarketOverview 定义之前声明，避免 TDZ）──
+        let activeTraderId = "";
+        let loadDataSeqId = 0;      // loadData 专用序列号（与 fetchMarketOverview 解耦）
+        let fetchMarketSeqId = 0;   // fetchMarketOverview 专用序列号
+        let traderSwitchSeq = 0; // 序列号：每次 selectTraderCard +1，防止旧 loadData 覆盖新数据
+        let pendingTraderSeq = {}; // {tid: seq} 每个 trader 最后一次 fetchMarketOverview 发起时的序列号
+
         async function fetchMarketOverview() {
             try {
+                const reqIdTid = activeTraderId;              // 捕获当前交易员
+                const reqIdSeq = traderSwitchSeq;             // 捕获本次调用的序列号
+                pendingTraderSeq[reqIdTid] = traderSwitchSeq; // 记录本 trader 当前的序列号
+                console.log('[FMO] start reqIdTid=' + reqIdTid + ' reqIdSeq=' + reqIdSeq + ' pendingSeq=' + pendingTraderSeq[reqIdTid]);
+                const reqId = ++fetchMarketSeqId;            // fetchMarketOverview 专用序列号
+
                 // Binance 现货行情（从本地 server 接口获取）
                 const [marketRes, balanceRes] = await Promise.allSettled([
                     fetch(getLocalApiUrl('/api/market'), {cache: 'no-store'}).then(r => r.json()),
                     fetch(getLocalApiUrl(`/api/balance?trader_id=${activeTraderId}`), {cache: 'no-store'}).then(r => r.json()).catch(() => null),
                 ]);
 
+                // 丢弃陈旧响应（ trader 已切换 或 版本已过期 或 有新的 selectTraderCard）
+                // 注意：用 pendingTraderSeq[reqIdTid] 而非 traderSwitchSeq，防止旧 trader 的慢响应覆盖
+                if (reqId !== fetchMarketSeqId || reqIdSeq !== pendingTraderSeq[reqIdTid]) {
+                    console.log('[FMO] BLOCKED reqIdTid=' + reqIdTid + ' reqIdSeq=' + reqIdSeq + ' pendingSeq=' + pendingTraderSeq[reqIdTid] + ' currentSeq=' + traderSwitchSeq);
+                    return;
+                }
+
                 const marketData = marketRes.status === 'fulfilled' ? marketRes.value : {};
                 const balanceData = balanceRes.status === 'fulfilled' ? balanceRes.value : null;
 
-                // 更新实时余额区域
+                // 存储最新余额数据（给 loadData 后续使用），并更新合约信息区
                 if (balanceData && !balanceData.error) {
-                    const total   = parseFloat(balanceData.total || 0).toFixed(4);
-                    const wallet  = parseFloat(balanceData.walletBalance || 0).toFixed(4);
-                    const unreal  = parseFloat(balanceData.unrealizedPnl || 0);
-                    const accountType = balanceData.accountType || 'spot';
+                    // 取当前交易员的余额（API 返回 {traderId: {...}}）
+                    const traderBal = balanceData[activeTraderId] || balanceData;
+                    if (traderBal && !traderBal.error) {
+                        // 注意：不更新 latestBalanceData，由 loadData（带 stale check）独家负责
+                        // 合约信息（直接用 traderBal，而非 latestBalanceData）
+                        const contractInfo = document.getElementById('contractInfo');
+                        const contractWallet = document.getElementById('contractWallet');
+                        const contractUnreal = document.getElementById('contractUnreal');
+                        const accountNote   = document.getElementById('accountNote');
+                        const unreal = parseFloat(traderBal.unrealizedPnl ?? 0);
+                        const accountType = traderBal.accountType || 'spot';
 
-                    updateMetric('currentBalance', `${total} USDT`, unreal >= 0 ? 'positive' : 'negative');
+                        if (contractInfo) {
+                            contractInfo.style.display = 'block';
+                            if (accountType === 'futures') {
+                                accountNote.textContent = 'U本位永续合约';
+                                contractWallet.textContent = `钱包余额 ${parseFloat(traderBal.walletBalance ?? 0).toFixed(4)} USDT`;
+                                contractUnreal.textContent = `未实现盈亏 ${unreal >= 0 ? '+' : ''}${unreal.toFixed(4)} USDT`;
+                            } else {
+                                accountNote.textContent = '现货账户';
+                                contractWallet.textContent = `可用 ${parseFloat(traderBal.available ?? 0).toFixed(2)} USDT`;
+                                contractUnreal.textContent = '';
+                            }
+                        }
+                // ── 三保险：Promise 完成后验证 pendingTraderSeq[reqIdTid] 是否仍是发起时的序列 ──
+                //    如果期间同一 trader 被再次点击（pendingTraderSeq[reqIdTid] 会 > reqIdSeq），丢弃本次响应
+                //    如果发起时 activeTraderId 为空（页面加载），pendingTraderSeq[reqIdTid] 未设置，reqIdSeq !== undefined → 丢弃
+                if (reqIdSeq !== pendingTraderSeq[reqIdTid]) return;
 
-                    // 合约信息
-                    const contractInfo = document.getElementById('contractInfo');
-                    const contractWallet = document.getElementById('contractWallet');
-                    const contractUnreal = document.getElementById('contractUnreal');
-                    const accountNote   = document.getElementById('accountNote');
+                // ── 四保险：用 API 响应里的 trader_id 验证数据属于当前选中的 trader ──
+                //    fetchMarketOverview 不再依赖 latestBalanceData，直接用 traderBal 的 trader_id
+                const traderBal = balanceData && !balanceData.error ? (balanceData[reqIdTid] || balanceData) : null;
+                if (!traderBal || traderBal.error) return;
+                if (reqIdTid !== traderBal.trader_id) return; // 数据归属验证：不属于本 trader 则丢弃
+                console.log('[FMO] UPDATE tid=' + reqIdTid + ' exchange=' + traderBal.exchange + ' DOM');
 
-                    if (accountType === 'futures') {
-                        contractInfo.style.display = 'block';
-                        accountNote.textContent = 'U本位永续合约';
-                        contractWallet.textContent = `钱包余额 ${wallet} USDT`;
-                        contractUnreal.textContent  = `未实现盈亏 ${unreal >= 0 ? '+' : ''}${unreal.toFixed(4)} USDT`;
-                    } else {
-                        contractInfo.style.display = 'block';
-                        accountNote.textContent = '现货账户';
-                        contractWallet.textContent = `可用 ${balanceData.available} USDT`;
-                        contractUnreal.textContent = '';
+                // 更新 contractTypeNote / contractModeNote（fetchMarketOverview 也需要更新这两个字段，确保立即切换时显示正确）
+                const exMap = { binance: 'Binance', okx_Ag: 'OKX' };
+                        const exLabel = exMap[traderBal.exchange] || traderBal.exchange?.toUpperCase() || '--';
+                        const modeLabel = accountType === 'spot' ? '现货' : '合约';
+                        const noteEl = document.getElementById('contractTypeNote');
+                        const modeEl = document.getElementById('contractModeNote');
+                        if (noteEl) noteEl.textContent = exLabel;
+                        if (modeEl) {
+                            modeEl.textContent = modeLabel;
+                            modeEl.className = 'metric-note' + (accountType === 'spot' ? ' mode-spot' : ' mode-futures');
+                        }
                     }
                 }
 
@@ -1126,14 +1173,13 @@
 
         fetchMarketOverview();
         setInterval(fetchMarketOverview, 10000);
-
-        let activeTraderId = "";
         let cachedSystemConfig = null;
         let isEditingTrader = false;
         let scanIntervalId;
         let scanFrequency = 15000;
         let systemStartTimeMs = null; // 毫秒时间戳，来自 status.system_start_time
         let allTraderStatus = {};     // {tid: status} 每个交易员最新status.json
+        let latestBalanceData = null;  // 最近一次从 /api/balance 获取的合约数据（用于合约信息展示）
 
         setInterval(() => {
             document.getElementById('liveClock').textContent = new Date().toLocaleTimeString('zh-CN', {hour12:false});
@@ -1166,12 +1212,32 @@
 
         // ── 定时更新所有交易员卡片的余额 + 运行时间 ──
         async function pollAllTraderCards() {
-            if (!activeTraderId) return;
-            for (const [tid] of Object.entries(cachedSystemConfig?.traders || {})) {
+            const traders = Object.entries(cachedSystemConfig?.traders || {});
+            await Promise.all(traders.map(async ([tid]) => {
                 try {
                     const ts = Date.now();
                     const s = await fetchJson(`${LOCAL_API_BASE}/data/${tid}/status.json?t=${ts}`);
-                    if (!s) continue;
+                    if (!s || s.equity == null || s.equity === 0) {
+                        // status.json missing or trader stopped — fall back to /api/balance
+                        try {
+                            const balRes = await fetch(getLocalApiUrl(`/api/balance?trader_id=${tid}`));
+                            if (balRes.ok) {
+                                const balData = await balRes.json();
+                                const traderBal = balData && !balData.error ? (balData[tid] || balData) : null;
+                                if (traderBal && !traderBal.error) {
+                                    const balEl = document.getElementById(`tcbalance-${tid}`);
+                                    if (balEl) {
+                                        const p = traderBal.totalEq ?? traderBal.equity ?? 0;
+                                        balEl.textContent = `${p >= 0 ? '+' : ''}${parseFloat(p).toFixed(2)}`;
+                                        balEl.className = 'tc-balance flat';
+                                    }
+                                    const uptimeEl = document.getElementById(`tcuptime-${tid}`);
+                                    if (uptimeEl) uptimeEl.textContent = '--:--:--';
+                                }
+                            }
+                        } catch (_) {}
+                        return;
+                    }
 
                     const uptimeEl = document.getElementById(`tcuptime-${tid}`);
                     if (uptimeEl && s.session_started_at) {
@@ -1190,7 +1256,7 @@
                         balEl.className = 'tc-balance ' + (p > 0 ? 'up' : p < 0 ? 'down' : 'flat');
                     }
                 } catch (_) {}
-            }
+            }));
         }
 
         // 每 5 秒更新卡片数据
@@ -1198,7 +1264,11 @@
 
 
         async function loadData() {
-            if(!activeTraderId) {
+            const loadDataTid = activeTraderId;           // 捕获当前交易员
+            const loadDataReqId = ++loadDataSeqId;       // loadData 专用序列号，与 fetchMarketOverview 完全解耦
+            const mySeq = traderSwitchSeq;                // ← 新：捕获本次调用的序列号
+            console.log('[loadData] start tid=' + loadDataTid + ' seq=' + mySeq + ' balanceReqId=' + loadDataReqId);
+            if (!loadDataTid) {
                 document.getElementById('liveLabel').textContent = '未选择实例';
                 document.getElementById('statusDot').className = 'status-dot';
                 document.getElementById('liveChip').classList.remove('is-active');
@@ -1215,6 +1285,9 @@
                     ]);
                 } catch(e) { }
 
+                // 丢弃过时响应（交易员已切换 或 请求版本已过期）
+                if (loadDataReqId !== loadDataSeqId || activeTraderId !== loadDataTid) return;
+
                 // 如果 status.json 不存在或 equity=0（trader 未启动，0 是默认值），从 /api/balance 拉实时余额
                 const isStopped = !status || status.equity == null || status.equity === 0;
                 if (isStopped && activeTraderId) {
@@ -1222,9 +1295,46 @@
                         const balRes = await fetch(getLocalApiUrl(`/api/balance?trader_id=${activeTraderId}`));
                         if (balRes.ok) {
                             const balData = await balRes.json();
-                            if (balData && !balData.error) {
-                                status = { equity: balData.total, balance: balData.available };
+                            // 取当前交易员的余额数据（API 返回 {traderId: {...}}）
+                            const traderBal = balData && !balData.error ? (balData[activeTraderId] || balData) : null;
+                            if (traderBal && !traderBal.error) {
+                                latestBalanceData = traderBal;
+                                status = {
+                                    equity: traderBal.totalEq ?? traderBal.equity,
+                                    balance: traderBal.balance ?? traderBal.available,
+                                    trading_mode: traderBal.accountType === 'futures' ? 'futures' : 'spot',
+                                    exchange: traderBal.exchange
+                                };
                                 latestStatus = status;
+                                const total = parseFloat(traderBal.totalEq ?? traderBal.equity ?? 0).toFixed(2);
+                                const unreal = parseFloat(traderBal.unrealizedPnl ?? 0);
+                                const accountType = traderBal.accountType || 'spot';
+                                updateMetric('currentBalance', `${total} USDT`, unreal >= 0 ? 'positive' : 'negative');
+                                const contractInfo = document.getElementById('contractInfo');
+                                const contractWallet = document.getElementById('contractWallet');
+                                const contractUnreal = document.getElementById('contractUnreal');
+                                const accountNoteEl = document.getElementById('accountNote');
+                                if (contractInfo) {
+                                    contractInfo.style.display = 'block';
+                                    if (accountType === 'futures') {
+                                        if (accountNoteEl) accountNoteEl.textContent = 'U本位永续合约';
+                                        contractWallet.textContent = `钱包余额 ${parseFloat(traderBal.walletBalance ?? 0).toFixed(4)} USDT`;
+                                        contractUnreal.textContent = `未实现盈亏 ${unreal >= 0 ? '+' : ''}${unreal.toFixed(4)} USDT`;
+                                    } else {
+                                        if (accountNoteEl) accountNoteEl.textContent = '现货账户';
+                                        contractWallet.textContent = `可用 ${parseFloat(traderBal.available ?? 0).toFixed(2)} USDT`;
+                                        contractUnreal.textContent = '';
+                                    }
+                                }
+                                // 同步更新 contractTypeNote / contractModeNote（防止被旧 loadData 覆盖）
+                                const exMap = { binance: 'Binance', okx_Ag: 'OKX' };
+                                const noteEl = document.getElementById('contractTypeNote');
+                                const modeEl = document.getElementById('contractModeNote');
+                                if (noteEl) noteEl.textContent = exMap[traderBal.exchange] || traderBal.exchange?.toUpperCase() || '--';
+                                if (modeEl) {
+                                    modeEl.textContent = accountType === 'spot' ? '现货' : '合约';
+                                    modeEl.className = 'metric-note' + (accountType === 'spot' ? ' mode-spot' : ' mode-futures');
+                                }
                             }
                         }
                     } catch (_) {}
@@ -1246,6 +1356,17 @@
                 refreshStaticPanels();
                 updateThinking(thoughts);
                 updateTrades(latestTrades, openTrade, openPosition);
+
+                // ← 关键：只有最新一次 selectTraderCard 触发的 loadData 才能更新 DOM
+                //    mySeq 检查：防止被后续 selectTraderCard 打断
+                //    activeTraderId 检查：防止 Promise.all 期间用户切换了交易员
+                // ── 三保险：序列号 + traderId + activeTraderId 全部通过才更新 DOM ──
+                if (mySeq !== traderSwitchSeq || activeTraderId !== loadDataTid) {
+                    console.log('[loadData] BLOCKED tid=' + loadDataTid + ' mySeq=' + mySeq + ' currentSeq=' + traderSwitchSeq + ' activeTid=' + activeTraderId);
+                    return;
+                }
+                console.log('[loadData] UPDATE tid=' + loadDataTid + ' DOM');
+
                 updateStrategy(latestStatus);
                 updateStatus(latestStatus);
 
@@ -1279,7 +1400,9 @@
                 if(aiScanFreqEl) aiScanFreqEl.textContent = freq + '秒';
                 const traderName = cachedSystemConfig?.traders?.[activeTraderId]?.name || '';
                 const liveLabel = document.getElementById('liveLabel');
-                if (isRunning) {
+                if (!liveLabel) {
+                    // liveLabel 不存在（页面结构不完整），跳过状态切换
+                } else if (isRunning) {
                     liveLabel.outerHTML = `<span id="liveLabel" style="color:var(--text); font-weight:600; cursor:default;">${traderName || '交易引擎'}</span>`;
                     document.getElementById('liveChip').className = 'live-chip is-active';
                 } else {
@@ -1412,19 +1535,41 @@
         }
 
         // ── 渲染顶部并行交易员卡片 ──
-        async function fetchTraderContractType(tid) {
+        async function fetchTraderContractType(tid, isRunning) {
+            if (!isRunning) return '';
             try {
                 const s = await fetchJson(`${LOCAL_API_BASE}/data/${tid}/status.json?t=${Date.now()}`);
                 return s?.contract_type || '';
             } catch { return ''; }
         }
 
+        async function fetchTraderBalance(tid, isRunning) {
+            if (!isRunning) {
+                try {
+                    const balRes = await fetch(getLocalApiUrl(`/api/balance?trader_id=${tid}`));
+                    if (balRes.ok) {
+                        const balData = await balRes.json();
+                        const traderBal = balData && !balData.error ? (balData[tid] || balData) : null;
+                        if (traderBal && !traderBal.error) {
+                            return traderBal.totalEq ?? traderBal.equity ?? 0;
+                        }
+                    }
+                } catch {}
+                return null;
+            }
+            try {
+                const s = await fetchJson(`${LOCAL_API_BASE}/data/${tid}/status.json?t=${Date.now()}`);
+                return s?.total_profit ?? null;
+            } catch { return null; }
+        }
+
         async function renderTraderCards(traders) {
             const stack = document.getElementById('traderCardStack');
             if (!stack) return;
-            // 并行获取每个 trader 的 contract_type
+            // 并行获取每个 trader 的 contract_type 和余额
             const entries = Object.entries(traders);
-            const typeArr = await Promise.all(entries.map(([tid]) => fetchTraderContractType(tid)));
+            const typeArr = await Promise.all(entries.map(([tid, info]) => fetchTraderContractType(tid, info.status === 'running')));
+            const profitArr = await Promise.all(entries.map(([tid, info]) => fetchTraderBalance(tid, info.status === 'running')));
             let html = '';
             entries.forEach(([tid, info], i) => {
                 const name = info.name || tid;
@@ -1435,7 +1580,7 @@
                 const badgeLabel = tradingMode === 'spot' ? '现货' : '合约';
                 const badgeClass = tradingMode === 'spot' ? 'spot' : 'futures';
                 const dotClass = isRunning ? '' : 'stopped';
-                const p = info.total_profit;
+                const p = profitArr[i];
                 const profitStr = p != null ? `${p >= 0 ? '+' : ''}${Number(p).toFixed(2)}` : '--';
                 const upClass = p > 0 ? 'up' : p < 0 ? 'down' : 'flat';
                 const exLabel = info.exchange === 'binance' ? 'BN' : info.exchange === 'okx_Ag' ? 'OKX' : (info.exchange || '').slice(0,3).toUpperCase();
@@ -1469,8 +1614,40 @@
 
         // ── 点击 trader card 切换活动交易员 ──
         window.selectTraderCard = function(tid) {
+            ++traderSwitchSeq;                          // ← 新：标记新的切换序列
             activeTraderId = tid;
+            ++loadDataSeqId;  // 使之前所有 loadData 响应失效，防止旧数据覆盖
+            // 清除旧 scanInterval，避免切换后多个 loadData 定时器并存
+            if (typeof scanIntervalId === 'number') {
+                clearInterval(scanIntervalId);
+                scanIntervalId = null;
+            }
             highlightActiveCard(tid);
+
+            // ── 立即同步更新 UI（不等待 loadData），避免残留旧数据 ──
+            const traderInfo = cachedSystemConfig?.traders?.[tid];
+            if (traderInfo) {
+                const exMap = { binance: 'Binance', okx_Ag: 'OKX' };
+                const exLabel = exMap[traderInfo.exchange] || traderInfo.exchange?.toUpperCase() || '--';
+                const tradingMode = traderInfo.trading_mode || 'futures';
+                const modeLabel = tradingMode === 'spot' ? '现货' : '合约';
+                const noteEl = document.getElementById('contractTypeNote');
+                const modeEl = document.getElementById('contractModeNote');
+                if (noteEl) noteEl.textContent = exLabel;
+                if (modeEl) {
+                    modeEl.textContent = modeLabel;
+                    modeEl.className = 'metric-note' + (tradingMode === 'spot' ? ' mode-spot' : ' mode-futures');
+                }
+                const coinsEl = document.getElementById('tradingCoins');
+                if (coinsEl) coinsEl.textContent = '--'; // watchlist 来自 status.json，loadData 异步更新
+            }
+
+            // 切换 chartDataSource 以匹配新交易员的账户类型
+            const newMode = traderInfo?.trading_mode || 'futures';
+            if (chartDataSource !== newMode) {
+                chartDataSource = newMode;
+                updateChartDataSourceUI();
+            }
             loadData();
         };
 
@@ -1497,6 +1674,13 @@
 
                     // ── 并行渲染顶部 trader cards ──
                     renderTraderCards(traders);
+
+                    // ── 初始化 activeTraderId：优先选中"运行中"的，否则选第一个 ──
+                    const runningTrader = Object.keys(traders).find(tid => traders[tid].status === 'running');
+                    const initialTrader = runningTrader || Object.keys(traders)[0];
+                    if (initialTrader && (!activeTraderId || !cachedSystemConfig?.traders?.[activeTraderId])) {
+                        selectTraderCard(initialTrader);
+                    }
 
                     // ── 下方列表保持不变 ──
                     for(const [tid, info] of Object.entries(traders)) {
@@ -1891,6 +2075,11 @@
 
         // Init Sequence
         async function bootSequence() {
+            // ── 清除所有旧定时器，防止 setInterval 叠加 ──
+            if (typeof scanIntervalId === 'number') clearInterval(scanIntervalId);
+            if (typeof fetchMarketIntervalId === 'number') clearInterval(fetchMarketIntervalId);
+            if (typeof pollCardsIntervalId === 'number') clearInterval(pollCardsIntervalId);
+
             await fetchSystemSettings();
             await fetchTradersList();
             const traderSelect = document.getElementById('activeTraderSelect');
@@ -1900,7 +2089,7 @@
             loadData();
             refreshStaticPanels();
             fetchCryptoNews();
-            setInterval(loadData, scanFrequency);
+            scanIntervalId = setInterval(loadData, scanFrequency);
             setInterval(fetchTradersList, 5000);
             setInterval(fetchCryptoNews, 120000); // refresh news every 2 min
         }

@@ -54,8 +54,7 @@ function _baseUrl(): string {
 
 function _isoTime(): string {
   const now = new Date();
-  const iso = now.toISOString().replace("Z", "GMT");
-  return iso;
+  return now.toISOString(); // OKX expects ISO 8601 with Z suffix
 }
 
 function _sign(timestamp: string, method: string, path: string, body: string): string {
@@ -219,17 +218,19 @@ export function computeRSI(candles: BinanceKline[], period = 14): number | null 
 // ── All SWAP Tickers ──────────────────────────────────────────
 
 export async function getAllSwapTickers(): Promise<BinanceTicker[]> {
-  const data = (await _get("/api/v5/market/tickers", { instType: "SWAP", uly: "USDT" })) as {
+  const data = (await _get("/api/v5/market/tickers", { instType: "SWAP" })) as {
     data?: {
       instId: string; last: string; high24h: string; low24h: string;
       vol24h: string; quoteVol24h: string; open24h: string;
     }[];
   };
   if (!data?.data) return [];
-  return (data.data as {
+  // Filter: only USDT-margined swaps (instId ends with -USDT-SWAP)
+  const usdtSwaps = (data.data as {
     instId: string; last: string; high24h: string; low24h: string;
     vol24h: string; quoteVol24h: string; open24h: string;
-  }[]).map((t) => ({
+  }[]).filter((t) => t.instId?.endsWith("-USDT-SWAP"));
+  return usdtSwaps.map((t) => ({
     symbol: t.instId,
     lastPrice: t.last ?? "0",
     highPrice: t.high24h ?? "0",
@@ -320,9 +321,9 @@ export async function getMarketSummary(instruments: string[]): Promise<MarketSum
           getFundingRate(okxId).catch(() => null),
         ]);
 
-        const rsi6_1h = computeRSI(candles1h.slice(-6), 6);
+        const rsi6_1h = computeRSI(candles1h.slice(-7), 6);
         const rsi14_1h = computeRSI(candles1h, 14);
-        const rsi6_4h = computeRSI(candles4h.slice(-6), 6);
+        const rsi6_4h = computeRSI(candles4h.slice(-7), 6);
         const fr = frData?.rate ?? null;
 
         result[sym] = {

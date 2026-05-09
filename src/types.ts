@@ -33,6 +33,7 @@ export interface BinanceBalanceDetail {
   availableBalance: string;
   walletBalance: string;
   crossUnPnl: string;
+  balance?: string;
 }
 
 export interface BinanceBalance {
@@ -50,6 +51,7 @@ export interface BinanceBalanceDetail {
   availableBalance: string;
   walletBalance: string;
   crossUnPnl: string;
+  balance?: string;
 }
 
 export interface BinancePosition {
